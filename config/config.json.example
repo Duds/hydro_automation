@@ -1,0 +1,52 @@
+{
+  "device": {
+    "ip_address": "192.168.1.XXX",
+    "email": "your_tapo_email@example.com",
+    "password": "your_tapo_password",
+    "auto_discovery": true
+  },
+  "cycle": {
+    "flood_duration_minutes": 15,
+    "drain_duration_minutes": 30,
+    "interval_minutes": 120
+  },
+  "schedule": {
+    "type": "time_based",
+    "flood_duration_minutes": 2.0,
+    "on_times": [
+      "06:00", "06:20", "06:40",
+      "07:00", "07:20", "07:40",
+      "08:00", "08:20", "08:40",
+      "09:00", "09:30",
+      "10:00", "10:30",
+      "11:00", "11:30",
+      "12:00", "12:30",
+      "13:00", "13:30",
+      "14:00", "14:30",
+      "15:00", "15:30",
+      "16:00", "16:30",
+      "17:00", "17:30",
+      "18:00", "18:20", "18:40",
+      "19:00", "19:20", "19:40",
+      "20:00",
+      "22:00",
+      "00:00",
+      "02:00",
+      "04:00"
+    ]
+  },
+  
+  "_schedule_example_interval_based": {
+    "type": "interval",
+    "enabled": true,
+    "active_hours": {
+      "start": "06:00",
+      "end": "22:00"
+    }
+  },
+  "logging": {
+    "log_file": "logs/hydro_controller.log",
+    "log_level": "INFO"
+  }
+}
+
