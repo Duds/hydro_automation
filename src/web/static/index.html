@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hydroponic Controller</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 Hydroponic Controller</h1>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Main Tabs -->
+            <div class="main-tabs">
+                <button class="main-tab-btn active" data-tab="dashboard">Dashboard</button>
+                <button class="main-tab-btn" data-tab="schedule">Schedule</button>
+                <button class="main-tab-btn" data-tab="logs">Logs</button>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboardTab" class="main-tab-content active">
+                <!-- System Status -->
+                <section class="dashboard">
+                    <h2>System Status</h2>
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <h3>Controller Status</h3>
+                            <div class="status-item">
+                                <label>Controller:</label>
+                                <span id="controllerStatus">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Scheduler:</label>
+                                <span id="schedulerStatus">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>State:</label>
+                                <span id="schedulerState">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Next Event:</label>
+                                <span id="nextEvent">-</span>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Device Status</h3>
+                            <div class="status-item">
+                                <label>Connection:</label>
+                                <span id="deviceConnected">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>State:</label>
+                                <span id="deviceState">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>IP Address:</label>
+                                <span id="deviceIP">-</span>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Environmental Data</h3>
+                            <div class="status-item">
+                                <label>Temperature:</label>
+                                <span id="temperature">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Sunrise:</label>
+                                <span id="sunrise">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Sunset:</label>
+                                <span id="sunset">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Adaptation:</label>
+                                <span id="adaptationStatus">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Control Panel -->
+                <section class="control-panel">
+                    <h2>Control Panel</h2>
+                    <div class="button-group">
+                        <button id="startBtn" class="btn btn-primary">Start Scheduler</button>
+                        <button id="stopBtn" class="btn btn-danger">Stop Scheduler</button>
+                        <button id="deviceOnBtn" class="btn btn-success">Turn Device ON</button>
+                        <button id="deviceOffBtn" class="btn btn-warning">Turn Device OFF</button>
+                        <button id="emergencyStopBtn" class="btn btn-emergency">Emergency Stop</button>
+                    </div>
+                </section>
+
+                <!-- Service Management -->
+                <section class="service-panel">
+                    <h2>Service Management</h2>
+                    <div class="info-box">
+                        <p>Control the daemon and web application services.</p>
+                    </div>
+                    <div class="service-controls">
+                        <div class="service-group">
+                            <h3>Daemon Service</h3>
+                            <div class="button-group">
+                                <button id="daemonStartBtn" class="btn btn-success">Start Daemon</button>
+                                <button id="daemonStopBtn" class="btn btn-danger">Stop Daemon</button>
+                                <button id="daemonRestartBtn" class="btn btn-warning">Restart Daemon</button>
+                            </div>
+                            <div class="status-item">
+                                <label>Status:</label>
+                                <span id="daemonStatus">-</span>
+                            </div>
+                        </div>
+                        <div class="service-group">
+                            <h3>Web Application</h3>
+                            <div class="button-group">
+                                <button id="webappStartBtn" class="btn btn-success">Start Web App</button>
+                                <button id="webappStopBtn" class="btn btn-danger">Stop Web App</button>
+                                <button id="webappRestartBtn" class="btn btn-warning">Restart Web App</button>
+                            </div>
+                            <div class="status-item">
+                                <label>Status:</label>
+                                <span id="webappStatus">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Schedule Tab -->
+            <div id="scheduleTab" class="main-tab-content">
+                <section class="config-panel">
+                    <h2>Schedule Configuration</h2>
+                    <div class="info-box">
+                        <p>Schedule configuration requires restart to take effect.</p>
+                        <p>Current schedule type: <span id="scheduleType">-</span></p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Flood Duration (minutes):</label>
+                        <input type="number" id="floodDuration" step="0.1" min="0.1" value="2.0">
+                    </div>
+
+                    <div class="schedule-cycles">
+                        <div class="schedule-header">
+                            <h3>Schedule Cycles</h3>
+                            <button id="addCycleBtn" class="btn btn-primary">Add Cycle</button>
+                        </div>
+                        <div class="cycles-table-container">
+                            <table class="cycles-table">
+                                <thead>
+                                    <tr>
+                                        <th>ON Time</th>
+                                        <th>OFF Duration (min)</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cyclesTableBody">
+                                    <!-- Cycles will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button id="saveScheduleConfig" class="btn btn-primary">Save Schedule</button>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logsTab" class="main-tab-content">
+                <section class="logs-panel">
+                    <h2>Logs</h2>
+                    <div class="logs-controls">
+                        <label>
+                            <input type="checkbox" id="autoScroll" checked> Auto-scroll
+                        </label>
+                        <button id="refreshLogs" class="btn btn-secondary">Refresh</button>
+                    </div>
+                    <div class="logs-container">
+                        <pre id="logsContent"></pre>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

@@ -3,8 +3,9 @@
 import json
 import signal
 import sys
+import threading
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .logger import setup_logger
 from .scheduler import CycleScheduler
@@ -28,6 +29,7 @@ class HydroController:
         self.controller: TapoController = None
         self.scheduler: CycleScheduler = None
         self.shutdown_requested = False
+        self.web_api = None
 
         # Load configuration
         self._load_config()
@@ -97,19 +99,48 @@ class HydroController:
         schedule_type = schedule_config.get("type", "interval")  # "interval" or "time_based"
 
         if schedule_type == "time_based":
-            # Use time-based scheduler with explicit ON times
-            on_times = schedule_config.get("on_times", [])
+            # Use time-based scheduler with cycles (new format) or on_times (backward compatibility)
             flood_duration_minutes = float(schedule_config.get("flood_duration_minutes", 2.0))
+            cycles = schedule_config.get("cycles", [])
+            on_times = schedule_config.get("on_times", [])
             
-            if not on_times:
-                raise ValueError("time_based schedule requires 'on_times' list in schedule configuration")
+            # Prefer cycles format if available, otherwise fall back to on_times
+            base_scheduler = None
+            if cycles:
+                base_scheduler = TimeScheduler(
+                    controller=self.controller,
+                    cycles=cycles,
+                    flood_duration_minutes=flood_duration_minutes,
+                    logger=self.logger
+                )
+            elif on_times:
+                base_scheduler = TimeScheduler(
+                    controller=self.controller,
+                    on_times=on_times,
+                    flood_duration_minutes=flood_duration_minutes,
+                    logger=self.logger
+                )
+            else:
+                raise ValueError("time_based schedule requires either 'cycles' or 'on_times' in schedule configuration")
             
-            self.scheduler = TimeScheduler(
-                controller=self.controller,
-                on_times=on_times,
-                flood_duration_minutes=flood_duration_minutes,
-                logger=self.logger
-            )
+            # Check if adaptive scheduling is enabled
+            adaptation_config = schedule_config.get("adaptation", {})
+            if adaptation_config.get("enabled", False):
+                from .adaptive_scheduler import AdaptiveScheduler
+                # Get base cycles for adaptive scheduler
+                base_cycles = cycles if cycles else [
+                    {"on_time": t.strftime("%H:%M"), "off_duration_minutes": 0}
+                    for t in base_scheduler.on_times
+                ]
+                self.scheduler = AdaptiveScheduler(
+                    base_cycles=base_cycles,
+                    controller=self.controller,
+                    flood_duration_minutes=flood_duration_minutes,
+                    adaptation_config=adaptation_config,
+                    logger=self.logger
+                )
+            else:
+                self.scheduler = base_scheduler
         else:
             # Use interval-based scheduler (original)
             cycle_config = self.config["cycle"]
@@ -155,6 +186,9 @@ class HydroController:
         if self.logger:
             self.logger.info("Controller started successfully")
             self.logger.info("Press Ctrl+C to stop")
+        
+        # Start web server if enabled
+        self._start_web_server()
 
         # Main loop - keep application running
         try:
@@ -166,10 +200,37 @@ class HydroController:
             self.shutdown_requested = True
             self.stop()
 
+    def _start_web_server(self):
+        """Start web server if enabled in configuration."""
+        web_config = self.config.get("web", {})
+        if not web_config.get("enabled", False):
+            return
+        
+        try:
+            from .web.api import WebAPI
+            
+            host = web_config.get("host", "0.0.0.0")
+            port = web_config.get("port", 8000)
+            
+            self.web_api = WebAPI(self, host=host, port=port)
+            self.web_api.start()
+            
+            if self.logger:
+                self.logger.info(f"Web UI started at http://{host}:{port}")
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Failed to start web server: {e}")
+            else:
+                print(f"Warning: Failed to start web server: {e}", file=sys.stderr)
+
     def stop(self):
         """Stop the controller gracefully."""
         if self.logger:
             self.logger.info("Stopping controller...")
+
+        # Stop web server
+        if self.web_api:
+            self.web_api.stop()
 
         # Stop scheduler (this will also ensure device is turned off)
         if self.scheduler:
@@ -190,11 +251,23 @@ def main():
         default="config/config.json",
         help="Path to configuration file (default: config/config.json)"
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable web UI (overrides config file setting)"
+    )
 
     args = parser.parse_args()
 
     try:
         app = HydroController(args.config)
+        
+        # Override web config if --web flag is set
+        if args.web:
+            if "web" not in app.config:
+                app.config["web"] = {}
+            app.config["web"]["enabled"] = True
+        
         app.start()
     except KeyboardInterrupt:
         print("\nShutdown requested by user")

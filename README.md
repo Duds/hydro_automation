@@ -7,6 +7,7 @@ A Python application to control a TP-Link Tapo P100 smart plug via WiFi for auto
 - **Unlimited Cycles**: No restriction on the number of flood/drain cycles (unlike Tapo app's 32-event limit)
 - **Flexible Scheduling**: Configurable flood duration, drain duration, and cycle intervals
 - **Time-based Scheduling**: Optional active hours (e.g., only cycle during daylight hours)
+- **Web UI**: Simple web interface for monitoring and control (accessible on local network)
 - **Error Recovery**: Automatic retry on connection failures with device state verification
 - **Graceful Shutdown**: Safe shutdown ensures the pump turns off on interruption
 - **Logging**: Comprehensive logging of all cycle events for troubleshooting
@@ -116,6 +117,9 @@ The configuration file (`config/config.json`) uses the following structure:
 - **schedule.active_hours.end**: End time for active cycle hours (HH:MM format)
 - **logging.log_file**: Path to log file (will be created automatically)
 - **logging.log_level**: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- **web.enabled**: Enable/disable web UI (default: `false`)
+- **web.host**: Host to bind web server to (default: `"0.0.0.0"` for all interfaces)
+- **web.port**: Port for web server (default: `8000`)
 
 ## Usage
 
@@ -132,6 +136,50 @@ Or with a custom config file:
 ```bash
 python -m src.main --config path/to/config.json
 ```
+
+### Web UI
+
+The controller includes a simple web interface for monitoring and control. To enable it:
+
+**Option 1: Using command line flag**
+```bash
+python -m src.main --web
+```
+
+**Option 2: Enable in configuration file**
+
+Edit `config/config.json` and add:
+```json
+{
+  "web": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}
+```
+
+Then run normally:
+```bash
+python -m src.main
+```
+
+**Accessing the Web UI:**
+
+Once started, the web UI will be available at:
+- `http://localhost:8000` (from the Mac)
+- `http://<mac-ip-address>:8000` (from any device on your local network)
+
+**Web UI Features:**
+- Real-time system status and device state
+- Start/Stop scheduler controls
+- Manual device control (ON/OFF)
+- Emergency stop
+- View and edit cycle configuration
+- Real-time log viewer
+- Responsive design for mobile and desktop
+
+**Note:** The web UI is accessible only on your local network. For remote access, use a VPN or SSH tunnel.
 
 ### Preventing Mac from Sleeping
 

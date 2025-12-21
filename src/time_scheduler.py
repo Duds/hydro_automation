@@ -3,18 +3,19 @@
 import threading
 import time
 from datetime import datetime, time as dt_time, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from .tapo_controller import TapoController
 
 
 class TimeScheduler:
-    """Scheduler that executes ON/OFF cycles at specific times."""
+    """Scheduler that executes ON/OFF cycles at specific times with variable OFF durations."""
 
     def __init__(
         self,
         controller: TapoController,
-        on_times: List[str],
+        on_times: Optional[List[str]] = None,
+        cycles: Optional[List[Dict[str, Any]]] = None,
         flood_duration_minutes: float = 2.0,
         logger=None
     ):
@@ -23,26 +24,54 @@ class TimeScheduler:
 
         Args:
             controller: TapoController instance
-            on_times: List of times in HH:MM format when device should turn ON (e.g., ["06:00", "06:20"])
+            on_times: List of times in HH:MM format when device should turn ON (backward compatibility)
+            cycles: List of cycle dicts with 'on_time' and 'off_duration_minutes' (new format)
             flood_duration_minutes: Duration to keep device ON in minutes (default: 2.0)
             logger: Optional logger instance
         """
         self.controller = controller
-        self.on_times = [self._parse_time(t) for t in on_times if self._parse_time(t) is not None]
         self.flood_duration_minutes = flood_duration_minutes
         self.logger = logger
 
-        if not self.on_times:
-            raise ValueError("At least one valid ON time must be provided")
-
-        # Sort times
-        self.on_times.sort()
+        # Support new cycles format or backward-compatible on_times
+        if cycles:
+            # New format: cycles with variable OFF durations
+            self.cycles = []
+            for cycle in cycles:
+                on_time_str = cycle.get("on_time")
+                off_duration = float(cycle.get("off_duration_minutes", 0))
+                parsed_time = self._parse_time(on_time_str) if on_time_str else None
+                if parsed_time is not None:
+                    self.cycles.append({
+                        "on_time": parsed_time,
+                        "off_duration_minutes": off_duration
+                    })
+            
+            if not self.cycles:
+                raise ValueError("At least one valid cycle must be provided")
+            
+            # Sort cycles by on_time
+            self.cycles.sort(key=lambda c: c["on_time"])
+            self.on_times = [c["on_time"] for c in self.cycles]
+            self.use_cycles = True
+        elif on_times:
+            # Backward compatibility: simple on_times list
+            self.on_times = [self._parse_time(t) for t in on_times if self._parse_time(t) is not None]
+            if not self.on_times:
+                raise ValueError("At least one valid ON time must be provided")
+            self.on_times.sort()
+            self.cycles = None
+            self.use_cycles = False
+        else:
+            raise ValueError("Either 'on_times' or 'cycles' must be provided")
 
         self.running = False
         self.shutdown_requested = False
         self.thread: Optional[threading.Thread] = None
         self.lock = threading.Lock()
         self.current_state = "idle"
+        self.current_cycle_index = 0  # Track current cycle for cascading behavior
+        self.use_cascading = True  # Enable cascading OFF duration behavior
 
     @staticmethod
     def _parse_time(time_str: str) -> Optional[dt_time]:
@@ -77,9 +106,32 @@ class TimeScheduler:
         except (ValueError, AttributeError, IndexError):
             return None
 
+    def _get_next_cycle(self, current_time: dt_time) -> Optional[Dict[str, Any]]:
+        """
+        Get the next scheduled cycle from the current time.
+
+        Args:
+            current_time: Current time
+
+        Returns:
+            Next cycle dict, or first cycle tomorrow if past last scheduled time
+        """
+        if self.use_cycles:
+            for cycle in self.cycles:
+                if cycle["on_time"] > current_time:
+                    return cycle
+            # Past last scheduled time, return first cycle tomorrow
+            return self.cycles[0] if self.cycles else None
+        else:
+            # Backward compatibility
+            for on_time in self.on_times:
+                if on_time > current_time:
+                    return {"on_time": on_time, "off_duration_minutes": None}
+            return {"on_time": self.on_times[0], "off_duration_minutes": None} if self.on_times else None
+
     def _get_next_on_time(self, current_time: dt_time) -> Optional[dt_time]:
         """
-        Get the next scheduled ON time from the current time.
+        Get the next scheduled ON time from the current time (backward compatibility).
 
         Args:
             current_time: Current time
@@ -87,12 +139,8 @@ class TimeScheduler:
         Returns:
             Next ON time, or first ON time tomorrow if past last scheduled time
         """
-        for on_time in self.on_times:
-            if on_time > current_time:
-                return on_time
-        
-        # Past last scheduled time, return first time tomorrow
-        return self.on_times[0]
+        cycle = self._get_next_cycle(current_time)
+        return cycle["on_time"] if cycle else None
 
     def _time_until_next_event(self, target_time: dt_time) -> float:
         """
@@ -119,33 +167,87 @@ class TimeScheduler:
         if self.logger:
             self.logger.info("Time-based scheduler started")
             self.logger.info(f"Flood duration: {self.flood_duration_minutes} minutes")
-            self.logger.info(f"Scheduled ON times: {[t.strftime('%H:%M') for t in self.on_times]}")
+            if self.use_cycles:
+                cycle_info = ", ".join([
+                    f"{c['on_time'].strftime('%H:%M')}({c['off_duration_minutes']}min OFF)"
+                    for c in self.cycles[:5]
+                ])
+                if len(self.cycles) > 5:
+                    cycle_info += f" ... ({len(self.cycles)} total)"
+                self.logger.info(f"Scheduled cycles: {cycle_info}")
+            else:
+                self.logger.info(f"Scheduled ON times: {[t.strftime('%H:%M') for t in self.on_times]}")
             self.logger.info(f"Total cycles per day: {len(self.on_times)}")
+            self.logger.info(f"Cascading behavior: {'enabled' if self.use_cascading else 'disabled'}")
+
+        # Initialize: find the first cycle to run
+        if self.use_cycles and self.cycles:
+            now_time = datetime.now().time()
+            # Find the next cycle from current time
+            for i, cycle in enumerate(self.cycles):
+                if cycle["on_time"] > now_time:
+                    self.current_cycle_index = i
+                    break
+            else:
+                # Past last cycle, start from beginning (next day)
+                self.current_cycle_index = 0
+        else:
+            self.current_cycle_index = 0
 
         while self.running and not self.shutdown_requested:
-            now_time = datetime.now().time()
-            next_on_time = self._get_next_on_time(now_time)
-            
-            if next_on_time is None:
+            if self.use_cycles and self.cycles:
+                # Cascading behavior: get current cycle and execute it
+                current_cycle = self.cycles[self.current_cycle_index]
+                next_on_time = current_cycle["on_time"]
+                off_duration_minutes = current_cycle.get("off_duration_minutes", 0)
+                
+                # Calculate time until this cycle's ON time
+                seconds_until_next = self._time_until_next_event(next_on_time)
+                
                 if self.logger:
-                    self.logger.error("No next ON time found, stopping scheduler")
-                break
+                    off_info = f" ({off_duration_minutes}min OFF)" if off_duration_minutes is not None else ""
+                    self.logger.info(
+                        f"Next cycle: {next_on_time.strftime('%H:%M')}{off_info} "
+                        f"(in {seconds_until_next / 60:.1f} minutes)"
+                    )
 
-            seconds_until_next = self._time_until_next_event(next_on_time)
-            
-            if self.logger:
-                self.logger.info(
-                    f"Next ON time: {next_on_time.strftime('%H:%M')} "
-                    f"(in {seconds_until_next / 60:.1f} minutes)"
-                )
+                # Wait until it's time to turn ON (only if we're waiting for scheduled time)
+                if seconds_until_next > 0:
+                    wait_start = time.time()
+                    while time.time() - wait_start < seconds_until_next and not self.shutdown_requested:
+                        time.sleep(1)
 
-            # Wait until it's time to turn ON
-            wait_start = time.time()
-            while time.time() - wait_start < seconds_until_next and not self.shutdown_requested:
-                time.sleep(1)
+                if self.shutdown_requested:
+                    break
+            else:
+                # Backward compatibility: original behavior
+                now_time = datetime.now().time()
+                next_cycle = self._get_next_cycle(now_time)
+                
+                if next_cycle is None:
+                    if self.logger:
+                        self.logger.error("No next cycle found, stopping scheduler")
+                    break
 
-            if self.shutdown_requested:
-                break
+                next_on_time = next_cycle["on_time"]
+                off_duration_minutes = next_cycle.get("off_duration_minutes")
+
+                seconds_until_next = self._time_until_next_event(next_on_time)
+                
+                if self.logger:
+                    off_info = f" ({off_duration_minutes}min OFF)" if off_duration_minutes is not None else ""
+                    self.logger.info(
+                        f"Next ON time: {next_on_time.strftime('%H:%M')}{off_info} "
+                        f"(in {seconds_until_next / 60:.1f} minutes)"
+                    )
+
+                # Wait until it's time to turn ON
+                wait_start = time.time()
+                while time.time() - wait_start < seconds_until_next and not self.shutdown_requested:
+                    time.sleep(1)
+
+                if self.shutdown_requested:
+                    break
 
             # Turn ON
             with self.lock:
@@ -181,11 +283,27 @@ class TimeScheduler:
 
             self.controller.turn_off(verify=True)
             
+            # Wait for OFF duration (cascading: next cycle starts immediately after OFF duration)
+            if off_duration_minutes is not None and off_duration_minutes > 0:
+                off_duration_seconds = off_duration_minutes * 60
+                if self.logger:
+                    self.logger.info(f"Waiting {off_duration_minutes} minutes (cascading: next cycle starts immediately after)")
+                
+                off_start = time.time()
+                while time.time() - off_start < off_duration_seconds and not self.shutdown_requested:
+                    time.sleep(1)
+            
             with self.lock:
                 self.current_state = "waiting"
             
             if self.logger:
-                self.logger.info("Cycle completed, waiting for next scheduled time")
+                self.logger.info("Cycle completed, proceeding to next cycle")
+            
+            # Cascading: move to next cycle immediately (no waiting for scheduled time)
+            if self.use_cascading and self.use_cycles and self.cycles:
+                self.current_cycle_index = (self.current_cycle_index + 1) % len(self.cycles)
+                # After OFF duration, next cycle starts immediately (no wait)
+                # The loop will continue and execute the next cycle
 
         if self.logger:
             self.logger.info("Time-based scheduler stopped")
