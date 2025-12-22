@@ -1,0 +1,249 @@
+---
+description: When developing code, committing, debugging or testing.
+alwaysApply: false
+---
+# Project Rules
+
+## Code Style
+
+### Python Style
+- Follow PEP 8 style guide
+- Use 4 spaces for indentation (no tabs)
+- Maximum line length: 100 characters (prefer 80 when possible)
+- Use descriptive variable and function names
+- Add type hints where appropriate (Python 3.7+)
+
+### Naming Conventions
+- **Files**: `snake_case.py` (e.g., `tapo_controller.py`)
+- **Classes**: `PascalCase` (e.g., `TapoController`)
+- **Functions/Methods**: `snake_case` (e.g., `turn_on_device`)
+- **Constants**: `UPPER_SNAKE_CASE` (e.g., `MAX_RETRIES`)
+- **Private Methods**: `_leading_underscore` (e.g., `_init_controller`)
+
+### Documentation
+- Use docstrings for all classes and public methods
+- Follow Google-style docstrings
+- Include type information in docstrings
+- Document complex logic with inline comments
+
+## Project Structure
+
+### Directory Layout
+```
+hydro_automation/
+├── src/              # Source code
+│   ├── web/         # Web UI (FastAPI)
+│   └── ...          # Core modules
+├── tests/           # Test files
+├── config/          # Configuration files
+│   ├── config.json.example
+│   └── config.json  # (gitignored)
+├── logs/            # Log files (gitignored)
+└── .cursor/         # Cursor IDE configuration
+```
+
+### Module Organization
+- One class per file (when possible)
+- Related functions grouped in modules
+- Import order: standard library, third-party, local
+
+## Configuration Management
+
+### Config Files
+- **NEVER** commit `config/config.json` (contains sensitive data)
+- **ALWAYS** update `config/config.json.example` when adding config options
+- Use JSON for configuration (simple, readable)
+- Validate config on load with clear error messages
+
+### Environment Variables
+- Consider environment variables for sensitive data in future
+- Current: JSON config file (acceptable for local use)
+- Document all config options in README
+
+## Error Handling
+
+### Exception Handling
+- Use specific exception types, not bare `except:`
+- Log errors with context (use logger, not print)
+- Return meaningful error messages to users
+- Don't expose sensitive information in error messages
+
+### Retry Logic
+- Implement retry logic for network operations
+- Use exponential backoff for retries
+- Set maximum retry limits
+- Log retry attempts
+
+### Graceful Degradation
+- Handle device connection failures gracefully
+- Continue operation when possible (e.g., scheduler continues if device temporarily unavailable)
+- Provide clear error messages to users
+
+## Logging
+
+### Log Levels
+- **DEBUG**: Detailed information for debugging
+- **INFO**: General informational messages
+- **WARNING**: Warning messages (non-critical issues)
+- **ERROR**: Error messages (operation failed)
+- **CRITICAL**: Critical errors (system may be unstable)
+
+### Logging Best Practices
+- Use structured logging (include context)
+- Don't log sensitive information (passwords, device IDs)
+- Log important state changes
+- Use appropriate log levels
+
+## Testing Requirements
+
+### Test Coverage
+- Write tests for new features
+- Maintain >80% code coverage
+- Test error cases and edge conditions
+- Run tests before committing
+
+### Test Organization
+- One test file per module
+- Group related tests in classes
+- Use descriptive test names
+- Keep tests independent and isolated
+
+## Git Workflow
+
+### Commit Messages
+- Use present tense: "Add feature" not "Added feature"
+- Be descriptive but concise
+- Reference issues if applicable
+- Follow format: `<type>: <description>`
+
+### Branch Strategy
+- `main` branch: stable, production-ready code
+- Feature branches: `feature/feature-name`
+- Keep commits atomic (one logical change per commit)
+
+### Pre-commit Checklist
+- [ ] All tests pass
+- [ ] No sensitive data in commits
+- [ ] Code follows style guidelines
+- [ ] Documentation updated if needed
+- [ ] Config example updated if config changed
+
+## Dependencies
+
+### Adding Dependencies
+- Add to `requirements.txt` with version pinning
+- Use `>=` for minimum versions (allow patch updates)
+- Document why dependency is needed
+- Check for security vulnerabilities
+
+### Updating Dependencies
+- Test thoroughly after updating
+- Check changelogs for breaking changes
+- Update version pins in `requirements.txt`
+
+## Documentation
+
+### README
+- Keep README up to date
+- Include installation instructions
+- Document configuration options
+- Provide usage examples
+
+### Code Comments
+- Explain "why" not "what" (code should be self-explanatory)
+- Document complex algorithms
+- Add TODO comments for future improvements
+- Mark deprecated code with `@deprecated`
+
+## Web UI Guidelines
+
+### API Design
+- Use RESTful conventions
+- Return consistent response formats
+- Use Pydantic models for validation
+- Sanitize sensitive data in responses
+
+### Frontend
+- Keep JavaScript simple and readable
+- Use modern ES6+ features
+- Handle errors gracefully
+- Provide user feedback for actions
+
+## Device Communication
+
+### Tapo P100 Integration
+- Use `plugp100` library (official support)
+- Handle connection failures gracefully
+- Implement auto-discovery as fallback
+- Verify device state after operations
+
+### Network Operations
+- Set appropriate timeouts
+- Implement retry logic
+- Handle network errors gracefully
+- Log network operations for debugging
+
+## Scheduling Logic
+
+### Time-based Scheduling
+- Use 24-hour format internally
+- Handle timezone conversions properly
+- Support cascading OFF durations
+- Validate schedule times on load
+
+### Adaptive Scheduling
+- Apply adaptations in correct order
+- Log all adjustments for transparency
+- Respect safety limits (min/max durations)
+- Update adaptations periodically
+
+## Security Considerations
+
+### Sensitive Data
+- Never commit passwords or device IDs
+- Sanitize config in API responses
+- Don't log sensitive information
+- Use `.gitignore` for sensitive files
+
+### Network Security
+- Web server for local network only
+- No authentication (assumes trusted network)
+- Don't expose to public internet
+
+## Performance
+
+### Optimization
+- Profile before optimizing
+- Use async/await for I/O operations
+- Avoid blocking operations in main thread
+- Cache expensive operations (e.g., BOM station lookup)
+
+### Resource Usage
+- Keep memory footprint small
+- Close connections properly
+- Clean up threads on shutdown
+- Monitor log file sizes
+
+## Maintenance
+
+### Code Review
+- Review for security issues
+- Check error handling
+- Verify test coverage
+- Ensure documentation is updated
+
+### Refactoring
+- Refactor when code becomes hard to maintain
+- Keep tests passing during refactoring
+- Update documentation after refactoring
+- Commit refactoring separately from features
+
+## Australian Conventions
+
+### Regional Settings
+- Use Australian English spelling
+- Use 24-hour time format
+- Use metric units
+- Use Australian date format (DD/MM/YYYY)
+- Consider Australian time zones
+

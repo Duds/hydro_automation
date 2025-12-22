@@ -45,30 +45,42 @@
 - Shifts ALL cycle times by that difference to align with sunrise
 - Updates daily when scheduler starts
 
-**2. Daylight Boost/Night Reduction:**
-- For each cycle, determines if `on_time` is during daylight (between sunrise and sunset) or night
-- **Daylight cycles**: Applies `daylight_boost` factor (default 1.2)
-  - Factor of 1.2 means 20% more frequent flooding
-  - OFF duration is multiplied by `1/1.2 = 0.83` (shorter OFF = more frequent)
-- **Night cycles**: Applies `night_reduction` factor (default 0.8)
-  - Factor of 0.8 means 20% less frequent flooding
-  - OFF duration is multiplied by `0.8` (longer OFF = less frequent)
+**2. Time-of-Day Period Factors (NEW):**
+- The system now uses **four time periods** instead of binary daylight/night:
+  - **Morning**: 06:00-09:00 (or sunrise to 09:00 if sunrise shift enabled)
+  - **Day**: 09:00-18:00 (or 09:00 to sunset if daylight shift enabled)
+  - **Evening**: 18:00-20:00 (or sunset to 20:00)
+  - **Night**: 20:00-06:00 next day (or 20:00 to sunrise)
+- Each period can have its own frequency factor:
+  - Factor > 1.0: Increases frequency (shorter OFF duration) = multiply OFF by `1/factor`
+  - Factor < 1.0: Decreases frequency (longer OFF duration) = multiply OFF by `factor`
+  - Factor = 1.0: No adjustment
+- Period boundaries can be adjusted dynamically based on sunrise/sunset times
 - Applies safety limits: minimum 5 minutes, maximum 180 minutes
+
+**Example (period-based factors):**
+- Base cycle: `{"on_time": "10:00", "off_duration_minutes": 28.0}` (day period)
+- `day_factor`: 1.0 (no adjustment)
+- Adjusted: `{"on_time": "10:00", "off_duration_minutes": 28.0}` (no change)
+
+- Base cycle: `{"on_time": "07:00", "off_duration_minutes": 18.0}` (morning period)
+- `morning_factor`: 1.1 (10% more frequent)
+- Adjusted: `{"on_time": "07:00", "off_duration_minutes": 16.4}` (18 × 1/1.1)
+
+- Base cycle: `{"on_time": "22:00", "off_duration_minutes": 118.0}` (night period)
+- `night_factor`: 0.9 (10% less frequent)
+- Adjusted: `{"on_time": "22:00", "off_duration_minutes": 106.2}` (118 × 0.9)
+
+**3. Legacy Daylight Boost/Night Reduction (Backward Compatibility):**
+- If `period_factors` are not configured (all set to 1.0), the system falls back to binary daylight/night
+- **Daylight cycles** (sunrise to sunset): Applies `daylight_boost` factor (default 1.2)
+- **Night cycles** (outside sunrise to sunset): Applies `night_reduction` factor (default 0.8)
 
 **Example (sunrise shift):**
 - Base schedule earliest cycle: 06:00
 - Sunrise: 05:46
 - Shift: -14 minutes
 - All cycles shift earlier by 14 minutes
-
-**Example (daylight boost/reduction):**
-- Base cycle: `{"on_time": "10:00", "off_duration_minutes": 28.0}` (daylight)
-- `daylight_boost`: 1.2
-- Adjusted: `{"on_time": "10:00", "off_duration_minutes": 23.3}` (28 × 0.83)
-
-- Base cycle: `{"on_time": "02:00", "off_duration_minutes": 118.0}` (night)
-- `night_reduction`: 0.8
-- Adjusted: `{"on_time": "02:00", "off_duration_minutes": 94.4}` (118 × 0.8)
 
 **Location:** `src/adaptive_scheduler.py` → `_apply_daylight_shift()`, `_apply_daylight_boost_reduction()`
 **Daylight calculation:** `src/daylight.py` → `shift_schedule_to_sunrise()`, `get_sunrise_sunset()`
