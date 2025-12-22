@@ -54,10 +54,14 @@ function setupEventListeners() {
     document.getElementById('deviceOffBtn').addEventListener('click', turnDeviceOff);
     document.getElementById('emergencyStopBtn').addEventListener('click', emergencyStop);
 
-    // Schedule configuration buttons
-    document.getElementById('addCycleBtn').addEventListener('click', addCycle);
-    document.getElementById('saveScheduleConfig').addEventListener('click', saveScheduleConfig);
-    document.getElementById('refreshLogs').addEventListener('click', loadLogs);
+        // Schedule configuration buttons
+        document.getElementById('addCycleBtn').addEventListener('click', addCycle);
+        document.getElementById('saveScheduleConfig').addEventListener('click', saveScheduleConfig);
+        document.getElementById('refreshLogs').addEventListener('click', loadLogs);
+
+        // Settings buttons
+        document.getElementById('saveSettings').addEventListener('click', saveSettings);
+        document.getElementById('resetSettings').addEventListener('click', resetSettings);
 
     // Service management buttons
     document.getElementById('daemonStartBtn').addEventListener('click', () => controlService('daemon', 'start'));
@@ -93,6 +97,7 @@ function startPolling() {
     loadLogs();
     updateServiceStatus();
     updateEnvironment();
+    loadSettings();
 }
 
 function stopPolling() {
@@ -489,19 +494,79 @@ async function updateServiceStatus() {
 
 async function controlService(service, action) {
     try {
-        const response = await fetch(`${API_BASE}/service/${service}/${action}`, {
-            method: 'POST'
-        });
-        const result = await response.json();
-        if (result.success) {
-            showMessage(result.message, 'success');
-            // Update status after a short delay
-            setTimeout(updateServiceStatus, 1000);
+        // For restart, the server may go down temporarily, so handle it specially
+        if (action === 'restart' && service === 'daemon') {
+            showMessage('Restarting daemon... (this may take a few seconds)', 'success');
+            
+            // Send restart request with a timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+            
+            try {
+                const response = await fetch(`${API_BASE}/service/${service}/${action}`, {
+                    method: 'POST',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+                // If fetch fails (network error), the server likely went down during restart
+                // This is expected - wait and check if it comes back
+                showMessage('Daemon restart initiated. Waiting for service to come back online...', 'success');
+                
+                // Poll for service to come back online
+                let attempts = 0;
+                const maxAttempts = 15; // 15 attempts = ~15 seconds
+                const pollInterval = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const statusResponse = await fetch(`${API_BASE}/service/status`);
+                        if (statusResponse.ok) {
+                            const status = await statusResponse.json();
+                            clearInterval(pollInterval);
+                            if (status.daemon_running) {
+                                showMessage('Daemon restarted successfully!', 'success');
+                                updateServiceStatus();
+                            } else {
+                                showMessage('Daemon restart may have failed. Please check status.', 'error');
+                                updateServiceStatus();
+                            }
+                        }
+                    } catch (pollError) {
+                        // Still waiting for server to come back
+                        if (attempts >= maxAttempts) {
+                            clearInterval(pollInterval);
+                            showMessage('Daemon restart timed out. Please check if the daemon is running manually.', 'error');
+                            updateServiceStatus();
+                        }
+                    }
+                }, 1000); // Poll every second
+            }
         } else {
-            showMessage(result.message, 'error');
+            // For start/stop, normal handling
+            const response = await fetch(`${API_BASE}/service/${service}/${action}`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+            if (result.success) {
+                showMessage(result.message, 'success');
+                // Update status after a short delay
+                setTimeout(updateServiceStatus, 1000);
+            } else {
+                showMessage(result.message, 'error');
+            }
         }
     } catch (error) {
-        showMessage(`Error ${action}ing ${service}: ${error.message}`, 'error');
+        // Only show error if it's not a network error during restart
+        if (!(action === 'restart' && service === 'daemon' && error.name === 'AbortError')) {
+            showMessage(`Error ${action}ing ${service}: ${error.message}`, 'error');
+        }
     }
 }
 
@@ -518,6 +583,17 @@ async function updateEnvironment() {
                 document.getElementById('temperature').textContent = 'N/A';
             }
             
+            // Update station name
+            if (env.temperature_station_name) {
+                document.getElementById('temperatureStationName').textContent = 
+                    `${env.temperature_station_name} (${env.temperature_station_id})`;
+            } else if (env.temperature_station_id) {
+                document.getElementById('temperatureStationName').textContent = 
+                    `Station ${env.temperature_station_id}`;
+            } else {
+                document.getElementById('temperatureStationName').textContent = 'N/A';
+            }
+            
             // Update sunrise/sunset
             document.getElementById('sunrise').textContent = env.sunrise || 'N/A';
             document.getElementById('sunset').textContent = env.sunset || 'N/A';
@@ -530,4 +606,229 @@ async function updateEnvironment() {
         console.error('Error fetching environment data:', error);
     }
 }
+
+async function loadSettings() {
+    try {
+        const response = await fetch(`${API_BASE}/config/schedule`);
+        if (response.ok) {
+            const schedule = await response.json();
+            const adaptation = schedule.adaptation || {};
+            const location = adaptation.location || {};
+            const temperature = adaptation.temperature || {};
+            const daylight = adaptation.daylight || {};
+
+            // Location settings
+            document.getElementById('postcode').value = location.postcode || '';
+            document.getElementById('timezone').value = location.timezone || 'Australia/Sydney';
+
+            // Temperature settings
+            document.getElementById('temperatureEnabled').checked = temperature.enabled || false;
+            const stationId = temperature.station_id;
+            // Display station name if we have a station ID
+            if (stationId && stationId !== 'auto') {
+                // Fetch station name to display
+                fetch(`${API_BASE}/bom/stations/${stationId}`)
+                    .then(r => r.json())
+                    .then(station => {
+                        const stationInput = document.getElementById('temperatureStation');
+                        if (stationInput) {
+                            stationInput.value = `${station.name} (${station.id})`;
+                        }
+                    })
+                    .catch(() => {
+                        // If fetch fails, just show the ID
+                        const stationInput = document.getElementById('temperatureStation');
+                        if (stationInput) {
+                            stationInput.value = stationId;
+                        }
+                    });
+            } else {
+                const stationInput = document.getElementById('temperatureStation');
+                if (stationInput) {
+                    stationInput.value = '';
+                }
+            }
+            document.getElementById('temperatureUpdateInterval').value = temperature.update_interval_minutes || 60;
+            document.getElementById('temperatureSensitivity').value = temperature.adjustment_sensitivity || 'medium';
+
+            // Daylight settings
+            document.getElementById('daylightEnabled').checked = daylight.enabled || false;
+            document.getElementById('daylightShiftSchedule').checked = daylight.shift_schedule !== false;
+            document.getElementById('daylightBoost').value = daylight.daylight_boost || 1.2;
+            document.getElementById('nightReduction').value = daylight.night_reduction || 0.8;
+
+            // Adaptation settings
+            document.getElementById('adaptationEnabled').checked = adaptation.enabled || false;
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+        showMessage('Error loading settings: ' + error.message, 'error');
+    }
+}
+
+async function saveSettings() {
+    try {
+        const schedule = await fetch(`${API_BASE}/config/schedule`).then(r => r.json());
+        
+        // Build adaptation config
+        const adaptation = schedule.adaptation || {};
+        
+        // Location
+        adaptation.location = {
+            postcode: document.getElementById('postcode').value.trim(),
+            timezone: document.getElementById('timezone').value
+        };
+
+        // Temperature - get station ID from the hidden field or current config
+        // The station ID is stored when postcode lookup happens
+        const stationInput = document.getElementById('temperatureStation');
+        let stationId = 'auto';
+        // Extract station ID from the display value if it's in format "Name (ID)"
+        if (stationInput && stationInput.value) {
+            const match = stationInput.value.match(/\((\d+)\)/);
+            if (match) {
+                stationId = match[1];
+            }
+        }
+        
+        adaptation.temperature = {
+            enabled: document.getElementById('temperatureEnabled').checked,
+            source: 'bom',
+            station_id: stationId,
+            update_interval_minutes: parseInt(document.getElementById('temperatureUpdateInterval').value) || 60,
+            adjustment_sensitivity: document.getElementById('temperatureSensitivity').value
+        };
+
+        // Daylight
+        adaptation.daylight = {
+            enabled: document.getElementById('daylightEnabled').checked,
+            shift_schedule: document.getElementById('daylightShiftSchedule').checked,
+            daylight_boost: parseFloat(document.getElementById('daylightBoost').value) || 1.2,
+            night_reduction: parseFloat(document.getElementById('nightReduction').value) || 0.8,
+            update_frequency: 'daily'
+        };
+
+        // Master enable
+        adaptation.enabled = document.getElementById('adaptationEnabled').checked;
+
+        // Update schedule config
+        schedule.adaptation = adaptation;
+
+        const response = await fetch(`${API_BASE}/config/schedule`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(schedule)
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            showMessage('Settings saved successfully. Restart daemon for changes to take effect.', 'success');
+        } else {
+            showMessage(result.detail || result.message || 'Error saving settings', 'error');
+        }
+    } catch (error) {
+        showMessage('Error saving settings: ' + error.message, 'error');
+    }
+}
+
+function resetSettings() {
+    if (confirm('Reset all settings to defaults? This will overwrite your current settings.')) {
+        // Reset to defaults
+        document.getElementById('postcode').value = '';
+        document.getElementById('timezone').value = 'Australia/Sydney';
+        document.getElementById('temperatureEnabled').checked = false;
+        document.getElementById('temperatureStation').value = '';
+        document.getElementById('temperatureUpdateInterval').value = 60;
+        document.getElementById('temperatureSensitivity').value = 'medium';
+        document.getElementById('daylightEnabled').checked = false;
+        document.getElementById('daylightShiftSchedule').checked = true;
+        document.getElementById('daylightBoost').value = 1.2;
+        document.getElementById('nightReduction').value = 0.8;
+        document.getElementById('adaptationEnabled').checked = false;
+        
+        showMessage('Settings reset to defaults. Click "Save Settings" to apply.', 'success');
+    }
+}
+
+// Removed loadBOMStations - no longer needed since we use postcode lookup only
+
+// Postcode lookup for nearest station
+document.addEventListener('DOMContentLoaded', () => {
+    const postcodeInput = document.getElementById('postcode');
+    if (postcodeInput) {
+        let postcodeLookupTimeout = null;
+        
+        postcodeInput.addEventListener('input', (e) => {
+            clearTimeout(postcodeLookupTimeout);
+            const postcode = e.target.value.trim();
+            
+            // Only lookup if postcode is 4 digits (Australian postcode format)
+            if (postcode.length === 4 && /^\d{4}$/.test(postcode)) {
+                postcodeLookupTimeout = setTimeout(async () => {
+                    try {
+                        const response = await fetch(`${API_BASE}/bom/nearest-station?postcode=${encodeURIComponent(postcode)}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            
+                            // Update the station input field with the station name
+                            const stationInput = document.getElementById('temperatureStation');
+                            if (stationInput) {
+                                stationInput.value = `${data.station_name} (${data.station_id})`;
+                                
+                                // Show a message about the auto-selection
+                                const stationSelectContainer = stationInput.closest('.form-group');
+                                if (stationSelectContainer) {
+                                    // Remove any existing message
+                                    const existingMsg = stationSelectContainer.querySelector('.nearest-station-msg');
+                                    if (existingMsg) {
+                                        existingMsg.remove();
+                                    }
+                                    
+                                    // Add message about nearest station
+                                    const msg = document.createElement('small');
+                                    msg.className = 'nearest-station-msg';
+                                    msg.style.color = '#28a745';
+                                    msg.style.display = 'block';
+                                    msg.style.marginTop = '5px';
+                                    msg.textContent = `✓ Station set: ${data.station_name} (${data.distance_km} km away)`;
+                                    stationSelectContainer.appendChild(msg);
+                                }
+                            }
+                        } else if (response.status === 404) {
+                            // Postcode not found - clear station and message
+                            const stationInput = document.getElementById('temperatureStation');
+                            if (stationInput) {
+                                stationInput.value = '';
+                            }
+                            const stationSelectContainer = stationInput?.closest('.form-group');
+                            if (stationSelectContainer) {
+                                const existingMsg = stationSelectContainer.querySelector('.nearest-station-msg');
+                                if (existingMsg) {
+                                    existingMsg.remove();
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error looking up nearest station:', error);
+                    }
+                }, 500); // Debounce postcode lookup
+            } else if (postcode.length === 0) {
+                // Clear station and message if postcode is cleared
+                const stationInput = document.getElementById('temperatureStation');
+                if (stationInput) {
+                    stationInput.value = '';
+                }
+                const stationSelectContainer = stationInput?.closest('.form-group');
+                if (stationSelectContainer) {
+                    const existingMsg = stationSelectContainer.querySelector('.nearest-station-msg');
+                    if (existingMsg) {
+                        existingMsg.remove();
+                    }
+                }
+            }
+        });
+    }
+});
 

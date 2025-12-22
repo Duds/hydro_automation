@@ -3,8 +3,14 @@
 import requests
 import time
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import json
+
+from .bom_stations import (
+    get_station_name,
+    find_nearest_station as find_nearest_station_db,
+    get_station_info
+)
 
 
 class BOMTemperature:
@@ -19,6 +25,9 @@ class BOMTemperature:
             logger: Optional logger instance
         """
         self.station_id = station_id
+        self.station_name: Optional[str] = None
+        if station_id:
+            self.station_name = get_station_name(station_id)
         self.logger = logger
         self.last_temperature: Optional[float] = None
         self.last_update: Optional[datetime] = None
@@ -28,9 +37,6 @@ class BOMTemperature:
         """
         Find nearest BOM observation station to given coordinates.
 
-        Note: This is a simplified implementation. In production, you'd want to
-        use a BOM station list or API to find the nearest station.
-
         Args:
             latitude: Latitude
             longitude: Longitude
@@ -38,35 +44,16 @@ class BOMTemperature:
         Returns:
             Station ID or None if not found
         """
-        # Common BOM station IDs for major Australian cities
-        # This is a simplified lookup - in production, use a full station database
-        station_map = {
-            # Sydney area
-            (-33.8688, 151.2093): "94768",  # Sydney Observatory Hill
-            # Melbourne area
-            (-37.8136, 144.9631): "95936",  # Melbourne
-            # Brisbane area
-            (-27.4698, 153.0251): "94578",  # Brisbane
-            # Perth area
-            (-31.9505, 115.8605): "94610",  # Perth
-            # Adelaide area
-            (-34.9285, 138.6007): "94672",  # Adelaide
-        }
-
-        # Find closest station (simplified - use distance calculation in production)
-        min_distance = float('inf')
-        closest_station = None
-
-        for (lat, lon), station_id in station_map.items():
-            distance = ((latitude - lat) ** 2 + (longitude - lon) ** 2) ** 0.5
-            if distance < min_distance:
-                min_distance = distance
-                closest_station = station_id
-
-        if self.logger and closest_station:
-            self.logger.info(f"Found nearest BOM station: {closest_station} (distance: {min_distance:.3f} degrees)")
-
-        return closest_station
+        result = find_nearest_station_db(latitude, longitude)
+        if result:
+            station_id, station_name, distance_km = result
+            if self.logger:
+                self.logger.info(
+                    f"Found nearest BOM station: {station_name} ({station_id}) "
+                    f"at {distance_km:.1f} km"
+                )
+            return station_id
+        return None
 
     def fetch_temperature(self) -> Optional[float]:
         """
@@ -86,7 +73,11 @@ class BOMTemperature:
             if self.logger:
                 self.logger.debug(f"Fetching temperature from BOM: {url}")
 
-            response = requests.get(url, timeout=10)
+            # BOM requires a User-Agent header
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
 
             data = response.json()
@@ -104,9 +95,10 @@ class BOMTemperature:
                         self.last_update = datetime.now()
                         
                         if self.logger:
+                            station_display = f"{self.station_name} ({self.station_id})" if self.station_name else f"station {self.station_id}"
                             self.logger.info(
                                 f"Fetched temperature from BOM: {self.last_temperature}°C "
-                                f"(station {self.station_id})"
+                                f"({station_display})"
                             )
                         
                         return self.last_temperature
@@ -135,12 +127,13 @@ class BOMTemperature:
 
         return None
 
-    def get_temperature_adjustment_factor(self, temperature: Optional[float]) -> float:
+    def get_temperature_adjustment_factor(self, temperature: Optional[float], sensitivity: str = "medium") -> float:
         """
         Calculate adjustment factor for OFF duration based on temperature.
 
         Args:
             temperature: Temperature in Celsius
+            sensitivity: Adjustment sensitivity - "low", "medium", or "high" (default: "medium")
 
         Returns:
             Adjustment factor (1.0 = no change, <1.0 = reduce OFF duration, >1.0 = increase OFF duration)
@@ -148,24 +141,49 @@ class BOMTemperature:
         if temperature is None:
             return 1.0  # No adjustment if temperature unknown
 
-        # Temperature bands and adjustment factors
+        # Base temperature bands and adjustment factors (medium sensitivity)
         if temperature < 15:
             # Cold: reduce frequency by 10-20% (increase OFF duration)
-            factor = 1.15  # 15% longer OFF duration
+            base_factor = 1.15  # 15% longer OFF duration
         elif temperature < 25:
             # Normal: no adjustment
-            factor = 1.0
+            base_factor = 1.0
         elif temperature < 30:
             # Warm: increase frequency by 10-20% (reduce OFF duration)
-            factor = 0.85  # 15% shorter OFF duration
+            base_factor = 0.85  # 15% shorter OFF duration
         else:
             # Hot: increase frequency by 20-30% (reduce OFF duration significantly)
-            factor = 0.70  # 30% shorter OFF duration
+            base_factor = 0.70  # 30% shorter OFF duration
+
+        # Apply sensitivity scaling
+        # Low: reduce adjustments by ~30% (make closer to 1.0)
+        # Medium: no scaling (use base factors)
+        # High: increase adjustments by ~30% (make further from 1.0)
+        if sensitivity == "low":
+            if base_factor == 1.0:
+                factor = 1.0  # No adjustment stays no adjustment
+            elif base_factor > 1.0:
+                # Scale down: 1.0 + (base - 1.0) * 0.7
+                factor = 1.0 + (base_factor - 1.0) * 0.7
+            else:
+                # Scale up: 1.0 - (1.0 - base) * 0.7
+                factor = 1.0 - (1.0 - base_factor) * 0.7
+        elif sensitivity == "high":
+            if base_factor == 1.0:
+                factor = 1.0  # No adjustment stays no adjustment
+            elif base_factor > 1.0:
+                # Scale up: 1.0 + (base - 1.0) * 1.3
+                factor = 1.0 + (base_factor - 1.0) * 1.3
+            else:
+                # Scale down: 1.0 - (1.0 - base) * 1.3
+                factor = 1.0 - (1.0 - base_factor) * 1.3
+        else:  # medium (default)
+            factor = base_factor
 
         if self.logger:
             self.logger.info(
                 f"Temperature adjustment factor: {factor:.2f} "
-                f"(temperature: {temperature}°C)"
+                f"(temperature: {temperature}°C, sensitivity: {sensitivity})"
             )
 
         return factor

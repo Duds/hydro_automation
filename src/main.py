@@ -30,6 +30,8 @@ class HydroController:
         self.scheduler: CycleScheduler = None
         self.shutdown_requested = False
         self.web_api = None
+        self.daylight_calc = None  # Daylight calculator instance
+        self.temperature_fetcher = None  # BOM temperature fetcher instance
 
         # Load configuration
         self._load_config()
@@ -42,6 +44,9 @@ class HydroController:
 
         # Initialise device controller
         self._init_controller()
+
+        # Initialise environmental data sources (for API access)
+        self._init_environmental_sources()
 
         # Initialise scheduler
         self._init_scheduler()
@@ -92,6 +97,62 @@ class HydroController:
             logger=self.logger,
             enable_auto_discovery=auto_discovery
         )
+
+    def _init_environmental_sources(self):
+        """Initialize environmental data sources (daylight, temperature) for API access."""
+        schedule_config = self.config.get("schedule", {})
+        adaptation_config = schedule_config.get("adaptation", {})
+        
+        # Initialize daylight calculator if location is configured (even if adaptation disabled)
+        location_config = adaptation_config.get("location", {})
+        postcode = location_config.get("postcode")
+        timezone = location_config.get("timezone")
+        
+        if postcode:
+            try:
+                from .daylight import DaylightCalculator
+                self.daylight_calc = DaylightCalculator(
+                    postcode=postcode,
+                    timezone=timezone,
+                    logger=self.logger
+                )
+                if self.logger:
+                    self.logger.info(f"Daylight calculator initialized for postcode {postcode}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Failed to initialize daylight calculator: {e}")
+        
+        # Initialize temperature fetcher if temperature source is configured (even if adaptation disabled)
+        temp_config = adaptation_config.get("temperature", {})
+        source = temp_config.get("source", "bom")
+        
+        if source == "bom":
+            try:
+                from .bom_temperature import BOMTemperature
+                station_id = temp_config.get("station_id", "auto")
+                
+                # Auto-detect station if needed
+                if station_id == "auto":
+                    if self.daylight_calc and self.daylight_calc.location_info:
+                        lat = self.daylight_calc.location_info.latitude
+                        lon = self.daylight_calc.location_info.longitude
+                        temp_fetcher_temp = BOMTemperature(logger=self.logger)
+                        station_id = temp_fetcher_temp.find_nearest_station(lat, lon)
+                    else:
+                        # Try to use a default station if no location configured
+                        # Use Sydney Observatory Hill as default
+                        station_id = "94768"
+                        if self.logger:
+                            self.logger.info("Using default BOM station (Sydney) - configure postcode for nearest station")
+                
+                if station_id and station_id != "auto":
+                    self.temperature_fetcher = BOMTemperature(station_id=station_id, logger=self.logger)
+                    station_name = self.temperature_fetcher.station_name or station_id
+                    if self.logger:
+                        self.logger.info(f"BOM temperature fetcher initialized for {station_name} ({station_id})")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Failed to initialize temperature fetcher: {e}")
 
     def _init_scheduler(self):
         """Initialise the scheduler (time-based or interval-based)."""

@@ -468,6 +468,66 @@ section h2 {
     background: #c82333;
 }
 
+.settings-panel {
+    padding: 20px;
+}
+
+.settings-section {
+    background: white;
+    padding: 20px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 20px;
+}
+
+.settings-section h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 10px;
+}
+
+.settings-section .form-group {
+    margin-bottom: 20px;
+}
+
+.settings-section .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #333;
+}
+
+.settings-section .form-group input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+}
+
+.settings-section .form-group input[type="text"],
+.settings-section .form-group input[type="number"],
+.settings-section .form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+}
+
+.settings-section .form-group input:focus,
+.settings-section .form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.settings-section .form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 0.85rem;
+}
+
 @media (max-width: 768px) {
     header {
         flex-direction: column;

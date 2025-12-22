@@ -91,6 +91,77 @@ class AdaptiveScheduler:
         
         return base_cycles
 
+    def _apply_daylight_boost_reduction(self, cycles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Apply daylight boost and night reduction factors to cycle OFF durations."""
+        if not self.daylight_calc:
+            return cycles
+        
+        daylight_config = self.adaptation_config.get("daylight", {})
+        if not daylight_config.get("enabled", False):
+            return cycles
+        
+        sunrise, sunset = self.daylight_calc.get_sunrise_sunset()
+        if not sunrise or not sunset:
+            return cycles
+        
+        daylight_boost = daylight_config.get("daylight_boost", 1.2)
+        night_reduction = daylight_config.get("night_reduction", 0.8)
+        
+        # Convert factors to OFF duration multipliers
+        # daylight_boost: 1.2 means 20% more frequent = shorter OFF = multiply by 1/1.2
+        # night_reduction: 0.8 means 20% less frequent = longer OFF = multiply by 0.8
+        daylight_factor = 1.0 / daylight_boost if daylight_boost != 0 else 1.0
+        night_factor = night_reduction
+        
+        adjusted_cycles = []
+        daylight_count = 0
+        night_count = 0
+        
+        for cycle in cycles:
+            adjusted_cycle = cycle.copy()
+            on_time_str = cycle.get("on_time")
+            
+            if on_time_str:
+                # Parse time string
+                if isinstance(on_time_str, str):
+                    parts = on_time_str.split(":")
+                    cycle_time = dt_time(int(parts[0]), int(parts[1]))
+                else:
+                    cycle_time = on_time_str
+                
+                # Determine if cycle is during daylight hours
+                is_daylight = sunrise <= cycle_time <= sunset
+                
+                # Apply appropriate factor
+                off_duration = cycle.get("off_duration_minutes", 0)
+                if is_daylight:
+                    adjustment_factor = daylight_factor
+                    daylight_count += 1
+                else:
+                    adjustment_factor = night_factor
+                    night_count += 1
+                
+                # Apply adjustment with safety limits
+                adjusted_off = off_duration * adjustment_factor
+                min_off = 5  # Minimum 5 minutes
+                max_off = 180  # Maximum 180 minutes
+                
+                adjusted_off = max(min_off, min(max_off, adjusted_off))
+                adjusted_cycle["off_duration_minutes"] = adjusted_off
+            else:
+                adjusted_cycle = cycle.copy()
+            
+            adjusted_cycles.append(adjusted_cycle)
+        
+        if self.logger and (daylight_count > 0 or night_count > 0):
+            self.logger.info(
+                f"Applied daylight boost/reduction: "
+                f"daylight_boost={daylight_boost:.2f} ({daylight_count} cycles), "
+                f"night_reduction={night_reduction:.2f} ({night_count} cycles)"
+            )
+        
+        return adjusted_cycles
+
     def _apply_temperature_adjustment(self, cycles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Apply temperature-based OFF duration adjustments."""
         if not self.temperature_fetcher:
@@ -111,9 +182,11 @@ class AdaptiveScheduler:
             if temperature is not None:
                 self.last_temperature_update = now
         
-        # Get adjustment factor
+        # Get adjustment factor with sensitivity
+        sensitivity = temp_config.get("adjustment_sensitivity", "medium")
         adjustment_factor = self.temperature_fetcher.get_temperature_adjustment_factor(
-            self.temperature_fetcher.last_temperature
+            self.temperature_fetcher.last_temperature,
+            sensitivity=sensitivity
         )
         
         if adjustment_factor == 1.0:
@@ -151,6 +224,9 @@ class AdaptiveScheduler:
         # Apply daylight shift (daily)
         cycles = self._apply_daylight_shift(cycles)
         self.last_sunrise_update = datetime.now()
+        
+        # Apply daylight boost/reduction (daily)
+        cycles = self._apply_daylight_boost_reduction(cycles)
         
         # Apply temperature adjustment (hourly)
         cycles = self._apply_temperature_adjustment(cycles)

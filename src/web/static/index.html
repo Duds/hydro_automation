@@ -21,6 +21,7 @@
             <div class="main-tabs">
                 <button class="main-tab-btn active" data-tab="dashboard">Dashboard</button>
                 <button class="main-tab-btn" data-tab="schedule">Schedule</button>
+                <button class="main-tab-btn" data-tab="settings">Settings</button>
                 <button class="main-tab-btn" data-tab="logs">Logs</button>
             </div>
 
@@ -71,6 +72,10 @@
                             <div class="status-item">
                                 <label>Temperature:</label>
                                 <span id="temperature">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Station:</label>
+                                <span id="temperatureStationName">-</span>
                             </div>
                             <div class="status-item">
                                 <label>Sunrise:</label>
@@ -169,6 +174,107 @@
                             </table>
                         </div>
                         <button id="saveScheduleConfig" class="btn btn-primary">Save Schedule</button>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settingsTab" class="main-tab-content">
+                <section class="settings-panel">
+                    <h2>System Settings</h2>
+                    <div class="info-box">
+                        <p>Settings changes require daemon restart to take effect.</p>
+                    </div>
+
+                    <!-- Location Settings -->
+                    <div class="settings-section">
+                        <h3>Location Settings</h3>
+                        <div class="form-group">
+                            <label for="postcode">Postcode:</label>
+                            <input type="text" id="postcode" placeholder="e.g., 2000" maxlength="4">
+                            <small>Australian postcode for sunrise/sunset calculations</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="timezone">Timezone:</label>
+                            <select id="timezone">
+                                <option value="Australia/Sydney">Australia/Sydney</option>
+                                <option value="Australia/Melbourne">Australia/Melbourne</option>
+                                <option value="Australia/Brisbane">Australia/Brisbane</option>
+                                <option value="Australia/Perth">Australia/Perth</option>
+                                <option value="Australia/Adelaide">Australia/Adelaide</option>
+                                <option value="Australia/Darwin">Australia/Darwin</option>
+                                <option value="Australia/Hobart">Australia/Hobart</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Temperature Settings -->
+                    <div class="settings-section">
+                        <h3>Temperature Settings</h3>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="temperatureEnabled"> Enable Temperature Adaptation
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="temperatureStation">BOM Station:</label>
+                            <input type="text" id="temperatureStation" readonly placeholder="Will be set automatically from postcode">
+                            <small>Station is automatically detected from postcode above</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="temperatureUpdateInterval">Update Interval (minutes):</label>
+                            <input type="number" id="temperatureUpdateInterval" min="1" max="1440" value="60">
+                            <small>How often to fetch temperature from BOM</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="temperatureSensitivity">Adjustment Sensitivity:</label>
+                            <select id="temperatureSensitivity">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Daylight Settings -->
+                    <div class="settings-section">
+                        <h3>Daylight Settings</h3>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="daylightEnabled"> Enable Daylight Adaptation
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="daylightShiftSchedule" checked> Shift Schedule with Sunrise
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="daylightBoost">Daylight Boost Factor:</label>
+                            <input type="number" id="daylightBoost" step="0.1" min="0.5" max="2.0" value="1.2">
+                            <small>Multiplier for cycle frequency during daylight hours</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="nightReduction">Night Reduction Factor:</label>
+                            <input type="number" id="nightReduction" step="0.1" min="0.5" max="2.0" value="0.8">
+                            <small>Multiplier for cycle frequency during night hours</small>
+                        </div>
+                    </div>
+
+                    <!-- Adaptation Settings -->
+                    <div class="settings-section">
+                        <h3>Adaptation Settings</h3>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="adaptationEnabled"> Enable Adaptive Scheduling
+                            </label>
+                            <small>Master switch for all adaptive features</small>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="saveSettings" class="btn btn-primary">Save Settings</button>
+                        <button id="resetSettings" class="btn btn-secondary">Reset to Defaults</button>
                     </div>
                 </section>
             </div>
