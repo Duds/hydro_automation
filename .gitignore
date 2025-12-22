@@ -11,6 +11,7 @@ ENV/
 
 # Configuration (contains sensitive data)
 config/config.json
+DEVICE_INFO.md
 
 # Logs
 logs/*.log

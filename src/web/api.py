@@ -76,8 +76,9 @@ class WebAPI:
                 device_state = device.is_device_on() if device_connected else None
                 device_ip = device.ip_address if device else None
                 
-                # Calculate next event time (simplified - would need scheduler-specific logic)
+                # Calculate next event time and time until next cycle
                 next_event_time = None
+                time_until_next_cycle = None
                 if scheduler_running and base_scheduler:
                     # Try to get next event time for TimeScheduler
                     try:
@@ -89,9 +90,55 @@ class WebAPI:
                                 seconds_until = base_scheduler._time_until_next_event(next_time)
                                 next_dt = datetime.now().timestamp() + seconds_until
                                 next_event_time = datetime.fromtimestamp(next_dt).strftime("%Y-%m-%d %H:%M:%S")
+                                
+                                # Format time until next cycle in human-readable format
+                                hours = int(seconds_until // 3600)
+                                minutes = int((seconds_until % 3600) // 60)
+                                seconds = int(seconds_until % 60)
+                                
+                                if hours > 0:
+                                    time_until_next_cycle = f"{hours}h {minutes}m"
+                                elif minutes > 0:
+                                    time_until_next_cycle = f"{minutes}m {seconds}s"
+                                else:
+                                    time_until_next_cycle = f"{seconds}s"
                     except Exception:
                         # If we can't calculate next event time, leave it as None
                         pass
+                
+                # Determine current time period
+                current_time_period = None
+                try:
+                    from datetime import time as dt_time
+                    now_time = datetime.now().time()
+                    
+                    # Check if we have an adaptive scheduler with period detection
+                    from ..adaptive_scheduler import AdaptiveScheduler
+                    if isinstance(scheduler, AdaptiveScheduler):
+                        # Use adaptive scheduler's period detection method
+                        sunrise = None
+                        sunset = None
+                        if hasattr(self.controller, 'daylight_calc') and self.controller.daylight_calc:
+                            sunrise, sunset = self.controller.daylight_calc.get_sunrise_sunset()
+                        if hasattr(scheduler, '_get_time_period'):
+                            current_time_period = scheduler._get_time_period(now_time, sunrise, sunset)
+                    else:
+                        # Simple period detection based on time of day
+                        hour = now_time.hour
+                        if 6 <= hour < 9:
+                            current_time_period = "morning"
+                        elif 9 <= hour < 18:
+                            current_time_period = "day"
+                        elif 18 <= hour < 20:
+                            current_time_period = "evening"
+                        else:
+                            current_time_period = "night"
+                except Exception as e:
+                    # If we can't determine period, leave it as None
+                    # Log error but don't fail the status endpoint
+                    if hasattr(self.controller, 'logger') and self.controller.logger:
+                        self.controller.logger.debug(f"Could not determine time period: {e}")
+                    pass
                 
                 return StatusResponse(
                     controller_running=not self.controller.shutdown_requested,
@@ -100,7 +147,9 @@ class WebAPI:
                     device_connected=device_connected,
                     device_state=device_state,
                     device_ip=device_ip,
-                    next_event_time=next_event_time
+                    next_event_time=next_event_time,
+                    time_until_next_cycle=time_until_next_cycle,
+                    current_time_period=current_time_period
                 )
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting status: {str(e)}")
@@ -114,11 +163,13 @@ class WebAPI:
                 
                 result = {
                     "temperature": None,
+                    "humidity": None,
                     "temperature_source": None,
                     "temperature_last_update": None,
                     "sunrise": None,
                     "sunset": None,
                     "adaptation_enabled": adaptation_config.get("enabled", False),
+                    "active_adaptive_enabled": adaptation_config.get("active_adaptive", {}).get("enabled", False),
                     "location_configured": False
                 }
                 
@@ -164,8 +215,9 @@ class WebAPI:
                         # Fetch fresh temperature
                         temp_fetcher.fetch_temperature()
                     
-                    # Return temperature data
+                    # Return temperature and humidity data
                     result["temperature"] = temp_fetcher.last_temperature
+                    result["humidity"] = temp_fetcher.last_humidity
                     station_display = (
                         f"{temp_fetcher.station_name} ({temp_fetcher.station_id})"
                         if temp_fetcher.station_name
@@ -354,6 +406,192 @@ class WebAPI:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting schedule config: {str(e)}")
 
+        @self.app.get("/api/config/schedule/adapted")
+        async def get_adapted_schedule():
+            """Get current adapted schedule cycles when adaptation is enabled."""
+            try:
+                scheduler = self.controller.scheduler
+                
+                # Check if scheduler is an ActiveAdaptiveScheduler
+                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
+                if isinstance(scheduler, ActiveAdaptiveScheduler):
+                    # Get adapted cycles from active adaptive scheduler
+                    adapted_cycles = scheduler.get_adapted_cycles()
+                    formatted_cycles = []
+                    for cycle in adapted_cycles:
+                        on_time = cycle.get("on_time")
+                        if on_time:
+                            if hasattr(on_time, 'strftime'):
+                                on_time_str = on_time.strftime("%H:%M")
+                            else:
+                                on_time_str = str(on_time)
+                            
+                            formatted_cycles.append({
+                                "on_time": on_time_str,
+                                "off_duration_minutes": cycle.get("off_duration_minutes", 0),
+                                "_period": cycle.get("_period"),
+                                "_temp": cycle.get("_temp"),
+                                "_humidity": cycle.get("_humidity"),
+                                "_temp_factor": cycle.get("_temp_factor"),
+                                "_humidity_factor": cycle.get("_humidity_factor")
+                            })
+                    
+                    # Get base cycles for comparison (analytical only)
+                    schedule_config = self.controller.config.get("schedule", {})
+                    base_cycles = schedule_config.get("cycles", [])
+                    
+                    return {
+                        "adapted": True,
+                        "active_adaptive": True,
+                        "cycles": formatted_cycles,
+                        "base_cycles": base_cycles
+                    }
+                
+                # Check if scheduler is an AdaptiveScheduler (legacy)
+                from ..adaptive_scheduler import AdaptiveScheduler
+                if isinstance(scheduler, AdaptiveScheduler):
+                    # Get adapted cycles from base_scheduler (contains active adapted cycles)
+                    base_scheduler = scheduler.base_scheduler
+                    if hasattr(base_scheduler, 'cycles') and base_scheduler.cycles:
+                        # Format cycles for JSON response
+                        adapted_cycles = []
+                        for cycle in base_scheduler.cycles:
+                            on_time = cycle.get("on_time")
+                            if on_time:
+                                # Convert time object to string if needed
+                                if hasattr(on_time, 'strftime'):
+                                    on_time_str = on_time.strftime("%H:%M")
+                                else:
+                                    on_time_str = str(on_time)
+                                
+                                adapted_cycles.append({
+                                    "on_time": on_time_str,
+                                    "off_duration_minutes": cycle.get("off_duration_minutes", 0)
+                                })
+                        
+                        return {
+                            "adapted": True,
+                            "cycles": adapted_cycles,
+                            "base_cycles": scheduler.base_cycles if hasattr(scheduler, 'base_cycles') else []
+                        }
+                    elif hasattr(scheduler, 'adapted_cycles') and scheduler.adapted_cycles:
+                        # Fallback to adapted_cycles if base_scheduler.cycles not available
+                        adapted_cycles = []
+                        for cycle in scheduler.adapted_cycles:
+                            on_time = cycle.get("on_time")
+                            if on_time:
+                                if hasattr(on_time, 'strftime'):
+                                    on_time_str = on_time.strftime("%H:%M")
+                                else:
+                                    on_time_str = str(on_time)
+                                
+                                adapted_cycles.append({
+                                    "on_time": on_time_str,
+                                    "off_duration_minutes": cycle.get("off_duration_minutes", 0)
+                                })
+                        
+                        return {
+                            "adapted": True,
+                            "active_adaptive": False,
+                            "cycles": adapted_cycles,
+                            "base_cycles": scheduler.base_cycles if hasattr(scheduler, 'base_cycles') else []
+                        }
+                
+                # Adaptation not enabled or no adapted cycles available
+                # Return base cycles
+                schedule_config = self.controller.config.get("schedule", {})
+                base_cycles = schedule_config.get("cycles", [])
+                
+                return {
+                    "adapted": False,
+                    "active_adaptive": False,
+                    "cycles": base_cycles,
+                    "base_cycles": base_cycles
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error getting adapted schedule: {str(e)}")
+
+        @self.app.get("/api/config/schedule/active-adaptive")
+        async def get_active_adaptive_schedule():
+            """Get active adaptive schedule (if enabled)."""
+            try:
+                scheduler = self.controller.scheduler
+                
+                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
+                if isinstance(scheduler, ActiveAdaptiveScheduler):
+                    adapted_cycles = scheduler.get_adapted_cycles()
+                    formatted_cycles = []
+                    for cycle in adapted_cycles:
+                        on_time = cycle.get("on_time")
+                        if on_time:
+                            if hasattr(on_time, 'strftime'):
+                                on_time_str = on_time.strftime("%H:%M")
+                            else:
+                                on_time_str = str(on_time)
+                            
+                            formatted_cycles.append({
+                                "on_time": on_time_str,
+                                "off_duration_minutes": cycle.get("off_duration_minutes", 0),
+                                "period": cycle.get("_period"),
+                                "temperature": cycle.get("_temp"),
+                                "humidity": cycle.get("_humidity"),
+                                "temp_factor": cycle.get("_temp_factor"),
+                                "humidity_factor": cycle.get("_humidity_factor")
+                            })
+                    
+                    return {
+                        "enabled": True,
+                        "cycles": formatted_cycles,
+                        "event_count": len(formatted_cycles)
+                    }
+                
+                return {
+                    "enabled": False,
+                    "cycles": [],
+                    "event_count": 0
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error getting active adaptive schedule: {str(e)}")
+
+        @self.app.get("/api/config/schedule/active-adaptive/validate")
+        async def validate_active_adaptive():
+            """Compare active adaptive schedule with base schedule (testing only)."""
+            try:
+                scheduler = self.controller.scheduler
+                
+                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
+                from ..adaptive_validation import AdaptiveValidator
+                
+                if not isinstance(scheduler, ActiveAdaptiveScheduler):
+                    raise HTTPException(status_code=400, detail="Active adaptive is not enabled")
+                
+                # Get active adaptive schedule
+                active_cycles = scheduler.get_adapted_cycles()
+                
+                # Get base schedule
+                schedule_config = self.controller.config.get("schedule", {})
+                base_cycles = schedule_config.get("cycles", [])
+                
+                if not base_cycles:
+                    raise HTTPException(status_code=400, detail="No base schedule available for comparison")
+                
+                # Validate
+                validator = AdaptiveValidator(threshold=0.5)
+                comparison = validator.compare_with_base(active_cycles, base_cycles)
+                report = validator.generate_validation_report(active_cycles, base_cycles)
+                
+                return {
+                    "comparison": comparison,
+                    "report": report,
+                    "warnings_count": len(comparison["warnings"]),
+                    "deviations_count": len(comparison["deviations"]),
+                    "matches_count": len(comparison["matches"])
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error validating active adaptive schedule: {str(e)}")
+
         @self.app.put("/api/config/schedule", response_model=ControlResponse)
         async def update_schedule_config(request: Request):
             """Update schedule configuration."""
@@ -364,6 +602,18 @@ class WebAPI:
                 
                 config = self.controller.config
                 schedule_config = config.get("schedule", {})
+                adaptation_config = schedule_config.get("adaptation", {})
+                adaptation_enabled = adaptation_config.get("enabled", False)
+                
+                # Check if adaptation is enabled and user is trying to modify schedule (not just adaptation config)
+                if adaptation_enabled:
+                    # Allow adaptation config updates, but block schedule changes
+                    if "cycles" in update_dict or "on_times" in update_dict or "flood_duration_minutes" in update_dict:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="Schedule editing is disabled when adaptation is enabled. "
+                                   "Disable adaptation first to modify the schedule manually."
+                        )
                 
                 # Handle cycles if present
                 if "cycles" in update_dict and update_dict["cycles"]:

@@ -69,6 +69,12 @@
       "daylight": {
         "enabled": false,
         "shift_schedule": true,
+        "period_factors": {
+          "morning": 1.556,
+          "day": 1.0,
+          "evening": 1.556,
+          "night": 0.237
+        },
         "daylight_boost": 1.2,
         "night_reduction": 0.8,
         "update_frequency": "daily"
@@ -81,6 +87,32 @@
         "enabled": false,
         "track_effectiveness": true,
         "suggest_improvements": true
+      },
+      "active_adaptive": {
+        "enabled": false,
+        "tod_frequencies": {
+          "morning": 18.0,
+          "day": 28.0,
+          "evening": 18.0,
+          "night": 118.0
+        },
+        "temperature_bands": {
+          "cold": {"max": 15, "factor": 1.15},
+          "normal": {"min": 15, "max": 25, "factor": 1.0},
+          "warm": {"min": 25, "max": 30, "factor": 0.85},
+          "hot": {"min": 30, "factor": 0.70}
+        },
+        "humidity_bands": {
+          "low": {"max": 40, "factor": 0.9},
+          "normal": {"min": 40, "max": 70, "factor": 1.0},
+          "high": {"min": 70, "factor": 1.1}
+        },
+        "constraints": {
+          "min_wait_duration": 5,
+          "max_wait_duration": 180,
+          "min_flood_duration": 2,
+          "max_flood_duration": 15
+        }
       }
     },
     "_example_legacy_format": {

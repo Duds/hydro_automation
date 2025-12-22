@@ -38,6 +38,11 @@ class TimeScheduler:
             # New format: cycles with variable OFF durations
             self.cycles = []
             for cycle in cycles:
+                # Ensure cycle is a dict, not a list
+                if not isinstance(cycle, dict):
+                    if self.logger:
+                        self.logger.warning(f"Skipping invalid cycle (not a dict): {cycle}")
+                    continue
                 on_time_str = cycle.get("on_time")
                 off_duration = float(cycle.get("off_duration_minutes", 0))
                 parsed_time = self._parse_time(on_time_str) if on_time_str else None
@@ -370,4 +375,51 @@ class TimeScheduler:
     def is_running(self) -> bool:
         """Check if scheduler is running."""
         return self.running
+
+    def update_cycles(self, new_cycles: List[Dict[str, Any]]):
+        """
+        Update cycles dynamically while scheduler is running.
+        
+        Args:
+            new_cycles: List of cycle dicts with 'on_time' and 'off_duration_minutes'
+        """
+        with self.lock:
+            # Parse and validate new cycles
+            updated_cycles = []
+            for cycle in new_cycles:
+                on_time_str = cycle.get("on_time")
+                off_duration = float(cycle.get("off_duration_minutes", 0))
+                parsed_time = self._parse_time(on_time_str) if on_time_str else None
+                if parsed_time is not None:
+                    updated_cycles.append({
+                        "on_time": parsed_time,
+                        "off_duration_minutes": off_duration
+                    })
+            
+            if not updated_cycles:
+                if self.logger:
+                    self.logger.warning("No valid cycles in update, keeping existing cycles")
+                return
+            
+            # Sort cycles by on_time
+            updated_cycles.sort(key=lambda c: c["on_time"])
+            
+            # Update cycles
+            self.cycles = updated_cycles
+            self.on_times = [c["on_time"] for c in self.cycles]
+            self.use_cycles = True
+            
+            # Reset current cycle index to find the next appropriate cycle
+            now_time = datetime.now().time()
+            self.current_cycle_index = 0
+            for i, cycle in enumerate(self.cycles):
+                if cycle["on_time"] > now_time:
+                    self.current_cycle_index = i
+                    break
+            
+            if self.logger:
+                self.logger.info(
+                    f"Updated schedule with {len(updated_cycles)} cycles. "
+                    f"Next cycle: {self.cycles[self.current_cycle_index]['on_time'].strftime('%H:%M')}"
+                )
 

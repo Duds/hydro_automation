@@ -43,11 +43,19 @@
                             </div>
                             <div class="status-item">
                                 <label>State:</label>
-                                <span id="schedulerState">-</span>
+                                <span id="schedulerState" class="state-indicator">-</span>
                             </div>
                             <div class="status-item">
                                 <label>Next Event:</label>
                                 <span id="nextEvent">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Time Until Next Cycle:</label>
+                                <span id="timeUntilNextCycle">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Current Time Period:</label>
+                                <span id="currentTimePeriod">-</span>
                             </div>
                         </div>
 
@@ -59,7 +67,7 @@
                             </div>
                             <div class="status-item">
                                 <label>State:</label>
-                                <span id="deviceState">-</span>
+                                <span id="deviceState" class="device-state-indicator">-</span>
                             </div>
                             <div class="status-item">
                                 <label>IP Address:</label>
@@ -72,6 +80,10 @@
                             <div class="status-item">
                                 <label>Temperature:</label>
                                 <span id="temperature">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Humidity:</label>
+                                <span id="humidity">-</span>
                             </div>
                             <div class="status-item">
                                 <label>Station:</label>
@@ -88,6 +100,10 @@
                             <div class="status-item">
                                 <label>Adaptation:</label>
                                 <span id="adaptationStatus">-</span>
+                            </div>
+                            <div class="status-item">
+                                <label>Active Adaptive:</label>
+                                <span id="activeAdaptiveStatus">-</span>
                             </div>
                         </div>
                     </div>
@@ -147,21 +163,26 @@
                     <div class="info-box">
                         <p>Schedule configuration requires restart to take effect.</p>
                         <p>Current schedule type: <span id="scheduleType">-</span></p>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Flood Duration (minutes):</label>
-                        <input type="number" id="floodDuration" step="0.1" min="0.1" value="2.0">
+                        <p id="activeAdaptiveInfo" style="display: none; color: #0066cc; font-weight: bold;">
+                            Active Adaptive Scheduling is enabled. Schedule is generated automatically from environmental factors.
+                        </p>
                     </div>
 
                     <div class="schedule-cycles">
                         <div class="schedule-header">
-                            <h3>Schedule Cycles</h3>
+                            <h3 id="scheduleViewTitle">Schedule Cycles</h3>
+                            <div class="schedule-view-controls" style="display: none;" id="scheduleViewControls">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="scheduleViewToggle">
+                                    <span class="toggle-slider"></span>
+                                    <span class="toggle-label" id="scheduleViewLabel">View: Base</span>
+                                </label>
+                            </div>
                             <button id="addCycleBtn" class="btn btn-primary">Add Cycle</button>
                         </div>
                         <div class="cycles-table-container">
                             <table class="cycles-table">
-                                <thead>
+                                <thead id="cyclesTableHead">
                                     <tr>
                                         <th>ON Time</th>
                                         <th>OFF Duration (min)</th>
@@ -173,7 +194,10 @@
                                 </tbody>
                             </table>
                         </div>
-                        <button id="saveScheduleConfig" class="btn btn-primary">Save Schedule</button>
+                        <div style="margin-top: 15px;">
+                            <button id="saveScheduleConfig" class="btn btn-primary">Save Schedule</button>
+                            <button id="validateScheduleBtn" class="btn btn-secondary" style="display: none; margin-left: 10px;">Validation Report</button>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -184,6 +208,123 @@
                     <h2>System Settings</h2>
                     <div class="info-box">
                         <p>Settings changes require daemon restart to take effect.</p>
+                    </div>
+
+                    <!-- System Settings -->
+                    <div class="settings-section">
+                        <h3>System Settings</h3>
+                        <div class="form-group">
+                            <label for="floodDuration">Flood Duration (minutes):</label>
+                            <input type="number" id="floodDuration" step="0.1" min="0.1" value="2.0">
+                            <small>Duration the pump runs during each flood cycle</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="minWaitDuration">Minimum Wait Duration (minutes):</label>
+                            <input type="number" id="minWaitDuration" step="1" min="1" max="60" value="5">
+                            <small>Minimum time between flood cycles (safety limit)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="maxWaitDuration">Maximum Wait Duration (minutes):</label>
+                            <input type="number" id="maxWaitDuration" step="1" min="60" max="300" value="180">
+                            <small>Maximum time between flood cycles (safety limit)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="minFloodDuration">Minimum Flood Duration (minutes):</label>
+                            <input type="number" id="minFloodDuration" step="0.1" min="0.5" max="5" value="2">
+                            <small>Minimum effective flood duration</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="maxFloodDuration">Maximum Flood Duration (minutes):</label>
+                            <input type="number" id="maxFloodDuration" step="0.1" min="5" max="30" value="15">
+                            <small>Maximum flood duration for root health</small>
+                        </div>
+                    </div>
+
+                    <!-- Active Adaptive Settings -->
+                    <div class="settings-section">
+                        <h3>Active Adaptive Scheduling</h3>
+                        <div class="info-box" style="background-color: #e8f4f8; border-left: 4px solid #0066cc;">
+                            <p><strong>Active Adaptive Scheduling</strong></p>
+                            <p>Generates schedules independently from environmental factors. No dependency on base schedule.</p>
+                            <p><small>Factors: Time of Day, Temperature, Humidity, Trends</small></p>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="activeAdaptiveEnabled"> Enable Active Adaptive Scheduling
+                            </label>
+                            <small>When enabled, schedule is generated automatically from factors (base schedule used only for validation)</small>
+                        </div>
+                        <div id="activeAdaptiveSettings" style="display: none;">
+                            <h4>Time of Day Base Frequencies</h4>
+                            <div class="form-group">
+                                <label for="todMorning">Morning (sunrise-09:00) Wait Duration (min):</label>
+                                <input type="number" id="todMorning" step="0.1" min="5" max="60" value="18.0">
+                            </div>
+                            <div class="form-group">
+                                <label for="todDay">Day (09:00-sunset) Wait Duration (min):</label>
+                                <input type="number" id="todDay" step="0.1" min="10" max="60" value="28.0">
+                            </div>
+                            <div class="form-group">
+                                <label for="todEvening">Evening (sunset-20:00) Wait Duration (min):</label>
+                                <input type="number" id="todEvening" step="0.1" min="5" max="60" value="18.0">
+                            </div>
+                            <div class="form-group">
+                                <label for="todNight">Night (20:00-sunrise) Wait Duration (min):</label>
+                                <input type="number" id="todNight" step="0.1" min="60" max="300" value="118.0">
+                            </div>
+                            
+                            <h4>Temperature Bands</h4>
+                            <div class="form-group">
+                                <label for="tempColdMax">Cold Max Temperature (°C):</label>
+                                <input type="number" id="tempColdMax" step="1" min="0" max="20" value="15">
+                                <label for="tempColdFactor">Factor:</label>
+                                <input type="number" id="tempColdFactor" step="0.05" min="1.0" max="2.0" value="1.15" style="width: 80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="tempNormalMin">Normal Min Temperature (°C):</label>
+                                <input type="number" id="tempNormalMin" step="1" min="10" max="25" value="15">
+                                <label for="tempNormalMax">Max:</label>
+                                <input type="number" id="tempNormalMax" step="1" min="20" max="30" value="25" style="width: 80px;">
+                                <label for="tempNormalFactor">Factor:</label>
+                                <input type="number" id="tempNormalFactor" step="0.05" min="0.5" max="1.5" value="1.0" style="width: 80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="tempWarmMin">Warm Min Temperature (°C):</label>
+                                <input type="number" id="tempWarmMin" step="1" min="20" max="30" value="25">
+                                <label for="tempWarmMax">Max:</label>
+                                <input type="number" id="tempWarmMax" step="1" min="25" max="35" value="30" style="width: 80px;">
+                                <label for="tempWarmFactor">Factor:</label>
+                                <input type="number" id="tempWarmFactor" step="0.05" min="0.5" max="1.0" value="0.85" style="width: 80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="tempHotMin">Hot Min Temperature (°C):</label>
+                                <input type="number" id="tempHotMin" step="1" min="25" max="40" value="30">
+                                <label for="tempHotFactor">Factor:</label>
+                                <input type="number" id="tempHotFactor" step="0.05" min="0.5" max="1.0" value="0.70" style="width: 80px;">
+                            </div>
+                            
+                            <h4>Humidity Bands</h4>
+                            <div class="form-group">
+                                <label for="humidityLowMax">Low Max Humidity (%):</label>
+                                <input type="number" id="humidityLowMax" step="1" min="0" max="50" value="40">
+                                <label for="humidityLowFactor">Factor:</label>
+                                <input type="number" id="humidityLowFactor" step="0.05" min="0.5" max="1.0" value="0.9" style="width: 80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="humidityNormalMin">Normal Min Humidity (%):</label>
+                                <input type="number" id="humidityNormalMin" step="1" min="30" max="70" value="40">
+                                <label for="humidityNormalMax">Max:</label>
+                                <input type="number" id="humidityNormalMax" step="1" min="50" max="90" value="70" style="width: 80px;">
+                                <label for="humidityNormalFactor">Factor:</label>
+                                <input type="number" id="humidityNormalFactor" step="0.05" min="0.5" max="1.5" value="1.0" style="width: 80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="humidityHighMin">High Min Humidity (%):</label>
+                                <input type="number" id="humidityHighMin" step="1" min="60" max="100" value="70">
+                                <label for="humidityHighFactor">Factor:</label>
+                                <input type="number" id="humidityHighFactor" step="0.05" min="1.0" max="2.0" value="1.1" style="width: 80px;">
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Location Settings -->
@@ -249,15 +390,47 @@
                                 <input type="checkbox" id="daylightShiftSchedule" checked> Shift Schedule with Sunrise
                             </label>
                         </div>
+                        
+                        <div class="info-box" style="margin-bottom: 15px;">
+                            <p><strong>Time-of-Day Period Factors</strong></p>
+                            <p>Configure frequency multipliers for different times of day. Values > 1.0 increase frequency (shorter OFF duration), values < 1.0 decrease frequency (longer OFF duration).</p>
+                            <p><small>Periods: Morning (06:00-09:00), Day (09:00-18:00), Evening (18:00-20:00), Night (20:00-06:00)</small></p>
+                        </div>
+                        
                         <div class="form-group">
-                            <label for="daylightBoost">Daylight Boost Factor:</label>
-                            <input type="number" id="daylightBoost" step="0.1" min="0.5" max="2.0" value="1.2">
-                            <small>Multiplier for cycle frequency during daylight hours</small>
+                            <label for="morningFactor">Morning Factor (06:00-09:00):</label>
+                            <input type="number" id="morningFactor" step="0.001" min="0.1" max="5.0" value="1.556">
+                            <small>Default: 1.556 (18min OFF from 28min base). Your schedule uses 20min intervals</small>
                         </div>
                         <div class="form-group">
-                            <label for="nightReduction">Night Reduction Factor:</label>
+                            <label for="dayFactor">Day Factor (09:00-18:00):</label>
+                            <input type="number" id="dayFactor" step="0.001" min="0.1" max="5.0" value="1.0">
+                            <small>Default: 1.0 (28min OFF - base period). Your schedule uses 30min intervals</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="eveningFactor">Evening Factor (18:00-20:00):</label>
+                            <input type="number" id="eveningFactor" step="0.001" min="0.1" max="5.0" value="1.556">
+                            <small>Default: 1.556 (18min OFF from 28min base). Your schedule uses 20min intervals</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="nightFactor">Night Factor (20:00-06:00):</label>
+                            <input type="number" id="nightFactor" step="0.001" min="0.1" max="5.0" value="0.237">
+                            <small>Default: 0.237 (118min OFF from 28min base). Your schedule uses 2hr intervals</small>
+                        </div>
+                        
+                        <div class="info-box" style="margin-top: 15px; background-color: #f0f0f0;">
+                            <p><strong>Legacy Settings (for backward compatibility)</strong></p>
+                            <p><small>These are used if period factors are not set. Leave period factors at 1.0 to use these instead.</small></p>
+                        </div>
+                        <div class="form-group">
+                            <label for="daylightBoost">Daylight Boost Factor (legacy):</label>
+                            <input type="number" id="daylightBoost" step="0.1" min="0.5" max="2.0" value="1.2">
+                            <small>Multiplier for cycle frequency during daylight hours (used if period factors not set)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="nightReduction">Night Reduction Factor (legacy):</label>
                             <input type="number" id="nightReduction" step="0.1" min="0.5" max="2.0" value="0.8">
-                            <small>Multiplier for cycle frequency during night hours</small>
+                            <small>Multiplier for cycle frequency during night hours (used if period factors not set)</small>
                         </div>
                     </div>
 

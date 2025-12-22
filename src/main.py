@@ -187,19 +187,32 @@ class HydroController:
             # Check if adaptive scheduling is enabled
             adaptation_config = schedule_config.get("adaptation", {})
             if adaptation_config.get("enabled", False):
-                from .adaptive_scheduler import AdaptiveScheduler
-                # Get base cycles for adaptive scheduler
-                base_cycles = cycles if cycles else [
-                    {"on_time": t.strftime("%H:%M"), "off_duration_minutes": 0}
-                    for t in base_scheduler.on_times
-                ]
-                self.scheduler = AdaptiveScheduler(
-                    base_cycles=base_cycles,
-                    controller=self.controller,
-                    flood_duration_minutes=flood_duration_minutes,
-                    adaptation_config=adaptation_config,
-                    logger=self.logger
-                )
+                # Check if active adaptive is enabled
+                active_adaptive_config = adaptation_config.get("active_adaptive", {})
+                if active_adaptive_config.get("enabled", False):
+                    # Use active adaptive scheduler (completely independent)
+                    from .active_adaptive_scheduler import ActiveAdaptiveScheduler
+                    self.scheduler = ActiveAdaptiveScheduler(
+                        controller=self.controller,
+                        flood_duration_minutes=flood_duration_minutes,
+                        adaptation_config=adaptation_config,
+                        logger=self.logger
+                    )
+                else:
+                    # Use legacy adaptive scheduler
+                    from .adaptive_scheduler import AdaptiveScheduler
+                    # Get base cycles for adaptive scheduler
+                    base_cycles = cycles if cycles else [
+                        {"on_time": t.strftime("%H:%M"), "off_duration_minutes": 0}
+                        for t in base_scheduler.on_times
+                    ]
+                    self.scheduler = AdaptiveScheduler(
+                        base_cycles=base_cycles,
+                        controller=self.controller,
+                        flood_duration_minutes=flood_duration_minutes,
+                        adaptation_config=adaptation_config,
+                        logger=self.logger
+                    )
             else:
                 self.scheduler = base_scheduler
         else:
@@ -242,7 +255,14 @@ class HydroController:
             sys.exit(1)
 
         # Start scheduler
-        self.scheduler.start()
+        try:
+            self.scheduler.start()
+        except Exception as e:
+            if self.logger:
+                import traceback
+                self.logger.error(f"Error starting scheduler: {e}")
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
 
         if self.logger:
             self.logger.info("Controller started successfully")
@@ -334,7 +354,10 @@ def main():
         print("\nShutdown requested by user")
         sys.exit(0)
     except Exception as e:
+        import traceback
         print(f"Error: {e}", file=sys.stderr)
+        print(f"Traceback:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
 
 

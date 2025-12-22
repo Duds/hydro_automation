@@ -1,0 +1,55 @@
+# Tapo P100 Device Information
+
+## Device Details
+
+- **Model**: Tapo P100
+- **MAC Address**: `XX-XX-XX-XX-XX-XX` (replace with your device's MAC address)
+- **Current IP**: `192.168.0.XXX` (replace with your device's IP address)
+- **Firmware**: X.X.X Build XXXXXX (replace with your device's firmware version)
+- **Hardware Version**: X.X (replace with your device's hardware version)
+- **Device ID**: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (replace with your device ID)
+- **Nickname**: Your device nickname (optional)
+
+## Setting Static IP Reservation
+
+To prevent IP address changes, configure your router to reserve a static IP for this device:
+
+1. Log into your router admin panel (usually `http://192.168.0.1` or `http://192.168.1.1`)
+2. Navigate to DHCP/Network Settings
+3. Find "DHCP Reservation" or "Static IP" option
+4. Add reservation:
+   - **MAC Address**: `XX-XX-XX-XX-XX-XX` ⚠️ **Use this - it's the identifier you need**
+   - **IP Address**: `192.168.0.XXX` (or your preferred IP)
+   - **Hostname/Description**: `Tapo-P100` or your device nickname (optional, for reference only)
+   - **Device Name**: Tapo P100 - Hydroponic Controller (optional description)
+
+**Note**: Most routers require the MAC address for static IP reservations. The hostname is usually just for identification in the router's device list.
+
+## Auto-Discovery
+
+If static IP is not configured, the controller will automatically discover the device on the network if the IP address changes. This is enabled by default in `config.json`.
+
+## Current Configuration
+
+Your device is configured in `config/config.json` with:
+- IP: Your device IP address
+- Auto-discovery: Enabled
+
+## Finding Your Device Information
+
+To find your device information:
+
+1. **Using the Tapo App:**
+   - Open the Tapo app
+   - Go to device settings
+   - View device information
+
+2. **Using the Controller:**
+   - Run the device discovery script: `python src/discover_device.py`
+   - Or check the logs when the controller connects
+
+3. **Using Your Router:**
+   - Log into router admin panel
+   - Check connected devices list
+   - Find your Tapo P100 device
+

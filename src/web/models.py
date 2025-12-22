@@ -13,6 +13,8 @@ class StatusResponse(BaseModel):
     device_state: Optional[bool]  # True = ON, False = OFF, None = unknown
     device_ip: Optional[str]
     next_event_time: Optional[str]
+    time_until_next_cycle: Optional[str]  # Human-readable format like "2h 15m" or "45m 30s"
+    current_time_period: Optional[str]  # "morning", "day", "evening", or "night"
 
 
 class DeviceInfoResponse(BaseModel):
