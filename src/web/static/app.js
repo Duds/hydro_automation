@@ -156,7 +156,8 @@ function startPolling() {
     loadLogs();
     updateServiceStatus();
     updateEnvironment();
-    loadSettings();
+    // Load settings after a short delay to ensure DOM is ready
+    setTimeout(() => loadSettings(), 100);
 }
 
 function stopPolling() {
@@ -1122,8 +1123,35 @@ async function updateScheduleEditingState(adaptationEnabled) {
     }
 }
 
+// Helper function to safely set element value
+function setElementValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.value = value;
+    }
+}
+
+// Helper function to safely set checkbox checked state
+function setElementChecked(id, checked) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.checked = checked;
+    }
+}
+
 async function loadSettings() {
     try {
+        // Wait a bit to ensure DOM is ready
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => {
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', resolve);
+                } else {
+                    resolve();
+                }
+            });
+        }
+        
         const response = await fetch(`${API_BASE}/config/schedule`);
         if (response.ok) {
             const schedule = await response.json();
@@ -1136,11 +1164,11 @@ async function loadSettings() {
             updateScheduleEditingState(adaptation.enabled || false);
 
             // Location settings
-            document.getElementById('postcode').value = location.postcode || '';
-            document.getElementById('timezone').value = location.timezone || 'Australia/Sydney';
+            setElementValue('postcode', location.postcode || '');
+            setElementValue('timezone', location.timezone || 'Australia/Sydney');
 
             // Temperature settings
-            document.getElementById('temperatureEnabled').checked = temperature.enabled || false;
+            setElementChecked('temperatureEnabled', temperature.enabled || false);
             const stationId = temperature.station_id;
             // Display station name if we have a station ID
             if (stationId && stationId !== 'auto') {
@@ -1148,54 +1176,45 @@ async function loadSettings() {
                 fetch(`${API_BASE}/bom/stations/${stationId}`)
                     .then(r => r.json())
                     .then(station => {
-                        const stationInput = document.getElementById('temperatureStation');
-                        if (stationInput) {
-                            stationInput.value = `${station.name} (${station.id})`;
-                        }
+                        setElementValue('temperatureStation', `${station.name} (${station.id})`);
                     })
                     .catch(() => {
                         // If fetch fails, just show the ID
-                        const stationInput = document.getElementById('temperatureStation');
-                        if (stationInput) {
-                            stationInput.value = stationId;
-                        }
+                        setElementValue('temperatureStation', stationId);
                     });
             } else {
-                const stationInput = document.getElementById('temperatureStation');
-                if (stationInput) {
-                    stationInput.value = '';
-                }
+                setElementValue('temperatureStation', '');
             }
-            document.getElementById('temperatureUpdateInterval').value = temperature.update_interval_minutes || 60;
-            document.getElementById('temperatureSensitivity').value = temperature.adjustment_sensitivity || 'medium';
+            setElementValue('temperatureUpdateInterval', temperature.update_interval_minutes || 60);
+            setElementValue('temperatureSensitivity', temperature.adjustment_sensitivity || 'medium');
 
             // Daylight settings
-            document.getElementById('daylightEnabled').checked = daylight.enabled || false;
-            document.getElementById('daylightShiftSchedule').checked = daylight.shift_schedule !== false;
+            setElementChecked('daylightEnabled', daylight.enabled || false);
+            setElementChecked('daylightShiftSchedule', daylight.shift_schedule !== false);
             
             // Period-based factors
             const periodFactors = daylight.period_factors || {};
-            document.getElementById('morningFactor').value = periodFactors.morning !== undefined ? periodFactors.morning : 1.556;
-            document.getElementById('dayFactor').value = periodFactors.day !== undefined ? periodFactors.day : 1.0;
-            document.getElementById('eveningFactor').value = periodFactors.evening !== undefined ? periodFactors.evening : 1.556;
-            document.getElementById('nightFactor').value = periodFactors.night !== undefined ? periodFactors.night : 0.237;
+            setElementValue('morningFactor', periodFactors.morning !== undefined ? periodFactors.morning : 1.556);
+            setElementValue('dayFactor', periodFactors.day !== undefined ? periodFactors.day : 1.0);
+            setElementValue('eveningFactor', periodFactors.evening !== undefined ? periodFactors.evening : 1.556);
+            setElementValue('nightFactor', periodFactors.night !== undefined ? periodFactors.night : 0.237);
             
             // Legacy settings (for backward compatibility)
-            document.getElementById('daylightBoost').value = daylight.daylight_boost || 1.2;
-            document.getElementById('nightReduction').value = daylight.night_reduction || 0.8;
+            setElementValue('daylightBoost', daylight.daylight_boost || 1.2);
+            setElementValue('nightReduction', daylight.night_reduction || 0.8);
 
             // Adaptation settings
-            document.getElementById('adaptationEnabled').checked = adaptation.enabled || false;
+            setElementChecked('adaptationEnabled', adaptation.enabled || false);
             
             // System settings - flood duration
             if (schedule.flood_duration_minutes !== undefined) {
-                document.getElementById('floodDuration').value = schedule.flood_duration_minutes;
+                setElementValue('floodDuration', schedule.flood_duration_minutes);
             }
             
             // Adaptive settings
             const adaptive = adaptation.adaptive || {};
             const adaptiveEnabled = adaptive.enabled || false;
-            document.getElementById('adaptiveEnabled').checked = adaptiveEnabled;
+            setElementChecked('adaptiveEnabled', adaptiveEnabled);
             
             // Show/hide adaptive settings
             const adaptiveSettings = document.getElementById('adaptiveSettings');
@@ -1206,51 +1225,51 @@ async function loadSettings() {
             // Load adaptive config
             if (adaptiveEnabled) {
                 const todFreq = adaptive.tod_frequencies || {};
-                document.getElementById('todMorning').value = todFreq.morning || 18.0;
-                document.getElementById('todDay').value = todFreq.day || 28.0;
-                document.getElementById('todEvening').value = todFreq.evening || 18.0;
-                document.getElementById('todNight').value = todFreq.night || 118.0;
+                setElementValue('todMorning', todFreq.morning || 18.0);
+                setElementValue('todDay', todFreq.day || 28.0);
+                setElementValue('todEvening', todFreq.evening || 18.0);
+                setElementValue('todNight', todFreq.night || 118.0);
                 
                 const tempBands = adaptive.temperature_bands || {};
                 if (tempBands.cold) {
-                    document.getElementById('tempColdMax').value = tempBands.cold.max || 15;
-                    document.getElementById('tempColdFactor').value = tempBands.cold.factor || 1.15;
+                    setElementValue('tempColdMax', tempBands.cold.max || 15);
+                    setElementValue('tempColdFactor', tempBands.cold.factor || 1.15);
                 }
                 if (tempBands.normal) {
-                    document.getElementById('tempNormalMin').value = tempBands.normal.min || 15;
-                    document.getElementById('tempNormalMax').value = tempBands.normal.max || 25;
-                    document.getElementById('tempNormalFactor').value = tempBands.normal.factor || 1.0;
+                    setElementValue('tempNormalMin', tempBands.normal.min || 15);
+                    setElementValue('tempNormalMax', tempBands.normal.max || 25);
+                    setElementValue('tempNormalFactor', tempBands.normal.factor || 1.0);
                 }
                 if (tempBands.warm) {
-                    document.getElementById('tempWarmMin').value = tempBands.warm.min || 25;
-                    document.getElementById('tempWarmMax').value = tempBands.warm.max || 30;
-                    document.getElementById('tempWarmFactor').value = tempBands.warm.factor || 0.85;
+                    setElementValue('tempWarmMin', tempBands.warm.min || 25);
+                    setElementValue('tempWarmMax', tempBands.warm.max || 30);
+                    setElementValue('tempWarmFactor', tempBands.warm.factor || 0.85);
                 }
                 if (tempBands.hot) {
-                    document.getElementById('tempHotMin').value = tempBands.hot.min || 30;
-                    document.getElementById('tempHotFactor').value = tempBands.hot.factor || 0.70;
+                    setElementValue('tempHotMin', tempBands.hot.min || 30);
+                    setElementValue('tempHotFactor', tempBands.hot.factor || 0.70);
                 }
                 
                 const humidityBands = adaptive.humidity_bands || {};
                 if (humidityBands.low) {
-                    document.getElementById('humidityLowMax').value = humidityBands.low.max || 40;
-                    document.getElementById('humidityLowFactor').value = humidityBands.low.factor || 0.9;
+                    setElementValue('humidityLowMax', humidityBands.low.max || 40);
+                    setElementValue('humidityLowFactor', humidityBands.low.factor || 0.9);
                 }
                 if (humidityBands.normal) {
-                    document.getElementById('humidityNormalMin').value = humidityBands.normal.min || 40;
-                    document.getElementById('humidityNormalMax').value = humidityBands.normal.max || 70;
-                    document.getElementById('humidityNormalFactor').value = humidityBands.normal.factor || 1.0;
+                    setElementValue('humidityNormalMin', humidityBands.normal.min || 40);
+                    setElementValue('humidityNormalMax', humidityBands.normal.max || 70);
+                    setElementValue('humidityNormalFactor', humidityBands.normal.factor || 1.0);
                 }
                 if (humidityBands.high) {
-                    document.getElementById('humidityHighMin').value = humidityBands.high.min || 70;
-                    document.getElementById('humidityHighFactor').value = humidityBands.high.factor || 1.1;
+                    setElementValue('humidityHighMin', humidityBands.high.min || 70);
+                    setElementValue('humidityHighFactor', humidityBands.high.factor || 1.1);
                 }
                 
                 const constraints = adaptive.constraints || {};
-                document.getElementById('minWaitDuration').value = constraints.min_wait_duration || 5;
-                document.getElementById('maxWaitDuration').value = constraints.max_wait_duration || 180;
-                document.getElementById('minFloodDuration').value = constraints.min_flood_duration || 2;
-                document.getElementById('maxFloodDuration').value = constraints.max_flood_duration || 15;
+                setElementValue('minWaitDuration', constraints.min_wait_duration || 5);
+                setElementValue('maxWaitDuration', constraints.max_wait_duration || 180);
+                setElementValue('minFloodDuration', constraints.min_flood_duration || 2);
+                setElementValue('maxFloodDuration', constraints.max_flood_duration || 15);
             }
         }
     } catch (error) {
@@ -1411,21 +1430,21 @@ async function saveSettings() {
 function resetSettings() {
     if (confirm('Reset all settings to defaults? This will overwrite your current settings.')) {
         // Reset to defaults
-        document.getElementById('postcode').value = '';
-        document.getElementById('timezone').value = 'Australia/Sydney';
-        document.getElementById('temperatureEnabled').checked = false;
-        document.getElementById('temperatureStation').value = '';
-        document.getElementById('temperatureUpdateInterval').value = 60;
-        document.getElementById('temperatureSensitivity').value = 'medium';
-        document.getElementById('daylightEnabled').checked = false;
-        document.getElementById('daylightShiftSchedule').checked = true;
-        document.getElementById('morningFactor').value = 1.556;
-        document.getElementById('dayFactor').value = 1.0;
-        document.getElementById('eveningFactor').value = 1.556;
-        document.getElementById('nightFactor').value = 0.237;
-        document.getElementById('daylightBoost').value = 1.2;
-        document.getElementById('nightReduction').value = 0.8;
-        document.getElementById('adaptationEnabled').checked = false;
+        setElementValue('postcode', '');
+        setElementValue('timezone', 'Australia/Sydney');
+        setElementChecked('temperatureEnabled', false);
+        setElementValue('temperatureStation', '');
+        setElementValue('temperatureUpdateInterval', 60);
+        setElementValue('temperatureSensitivity', 'medium');
+        setElementChecked('daylightEnabled', false);
+        setElementChecked('daylightShiftSchedule', true);
+        setElementValue('morningFactor', 1.556);
+        setElementValue('dayFactor', 1.0);
+        setElementValue('eveningFactor', 1.556);
+        setElementValue('nightFactor', 0.237);
+        setElementValue('daylightBoost', 1.2);
+        setElementValue('nightReduction', 0.8);
+        setElementChecked('adaptationEnabled', false);
         
         showMessage('Settings reset to defaults. Click "Save Settings" to apply.', 'success');
     }

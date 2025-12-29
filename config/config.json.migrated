@@ -1,0 +1,126 @@
+{
+  "devices": {
+    "devices": [
+      {
+        "device_id": "pump1",
+        "name": "Main Pump",
+        "brand": "tapo",
+        "type": "power_controller",
+        "ip_address": "192.168.0.126",
+        "email": "hello@dalerogers.com.au",
+        "password": "Z2lxmVn$1Y8hDqi",
+        "auto_discovery": true
+      }
+    ]
+  },
+  "sensors": {
+    "sensors": []
+  },
+  "actuators": {
+    "actuators": []
+  },
+  "growing_system": {
+    "type": "flood_drain",
+    "primary_device_id": "pump1"
+  },
+  "schedule": {
+    "type": "time_based",
+    "flood_duration_minutes": 2.0,
+    "cycles": [
+      {"on_time": "00:00", "off_duration_minutes": 118.0},
+      {"on_time": "02:00", "off_duration_minutes": 118.0},
+      {"on_time": "04:00", "off_duration_minutes": 118.0},
+      {"on_time": "06:00", "off_duration_minutes": 18.0},
+      {"on_time": "06:20", "off_duration_minutes": 18.0},
+      {"on_time": "06:40", "off_duration_minutes": 18.0},
+      {"on_time": "07:00", "off_duration_minutes": 18.0},
+      {"on_time": "07:20", "off_duration_minutes": 18.0},
+      {"on_time": "07:40", "off_duration_minutes": 18.0},
+      {"on_time": "08:00", "off_duration_minutes": 18.0},
+      {"on_time": "08:20", "off_duration_minutes": 18.0},
+      {"on_time": "08:40", "off_duration_minutes": 18.0},
+      {"on_time": "09:00", "off_duration_minutes": 28.0},
+      {"on_time": "09:30", "off_duration_minutes": 28.0},
+      {"on_time": "10:00", "off_duration_minutes": 28.0},
+      {"on_time": "10:30", "off_duration_minutes": 28.0},
+      {"on_time": "11:00", "off_duration_minutes": 28.0},
+      {"on_time": "11:30", "off_duration_minutes": 28.0},
+      {"on_time": "12:00", "off_duration_minutes": 28.0},
+      {"on_time": "12:30", "off_duration_minutes": 28.0},
+      {"on_time": "13:00", "off_duration_minutes": 28.0},
+      {"on_time": "13:30", "off_duration_minutes": 28.0},
+      {"on_time": "14:00", "off_duration_minutes": 28.0},
+      {"on_time": "14:30", "off_duration_minutes": 28.0},
+      {"on_time": "15:00", "off_duration_minutes": 28.0},
+      {"on_time": "15:30", "off_duration_minutes": 28.0},
+      {"on_time": "16:00", "off_duration_minutes": 28.0},
+      {"on_time": "16:30", "off_duration_minutes": 28.0},
+      {"on_time": "17:00", "off_duration_minutes": 28.0},
+      {"on_time": "17:30", "off_duration_minutes": 28.0},
+      {"on_time": "18:00", "off_duration_minutes": 18.0},
+      {"on_time": "18:20", "off_duration_minutes": 18.0},
+      {"on_time": "18:40", "off_duration_minutes": 18.0},
+      {"on_time": "19:00", "off_duration_minutes": 18.0},
+      {"on_time": "19:20", "off_duration_minutes": 18.0},
+      {"on_time": "19:40", "off_duration_minutes": 18.0},
+      {"on_time": "20:00", "off_duration_minutes": 118.0},
+      {"on_time": "22:00", "off_duration_minutes": 118.0}
+    ],
+    "adaptation": {
+      "enabled": false,
+      "location": {
+        "postcode": "2000",
+        "timezone": "Australia/Sydney"
+      },
+      "temperature": {
+        "enabled": false,
+        "source": "bom",
+        "station_id": "auto",
+        "update_interval_minutes": 60
+      },
+      "daylight": {
+        "enabled": false,
+        "shift_schedule": true,
+        "daylight_boost": 1.2,
+        "night_reduction": 0.8,
+        "update_frequency": "daily"
+      },
+      "adaptive": {
+        "enabled": false,
+        "tod_frequencies": {
+          "morning": 18.0,
+          "day": 28.0,
+          "evening": 18.0,
+          "night": 118.0
+        },
+        "temperature_bands": {
+          "cold": {"max": 15, "factor": 1.15},
+          "normal": {"min": 15, "max": 25, "factor": 1.0},
+          "warm": {"min": 25, "max": 30, "factor": 0.85},
+          "hot": {"min": 30, "factor": 0.70}
+        },
+        "humidity_bands": {
+          "low": {"max": 40, "factor": 0.9},
+          "normal": {"min": 40, "max": 70, "factor": 1.0},
+          "high": {"min": 70, "factor": 1.1}
+        },
+        "constraints": {
+          "min_wait_duration": 5,
+          "max_wait_duration": 180,
+          "min_flood_duration": 2,
+          "max_flood_duration": 15
+        }
+      }
+    }
+  },
+  "logging": {
+    "log_file": "logs/hydro_controller.log",
+    "log_level": "INFO"
+  },
+  "web": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8000
+  }
+}
+
