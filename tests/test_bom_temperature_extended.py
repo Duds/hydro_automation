@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, time as dt_time, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
-from src.bom_temperature import BOMTemperature
+from src.data.bom_temperature import BOMTemperature
 
 
 class TestBOMTemperatureExtended:

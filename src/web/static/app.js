@@ -47,48 +47,95 @@ function switchMainTab(tabName) {
 }
 
 function setupEventListeners() {
-    // Control buttons
-    document.getElementById('startBtn').addEventListener('click', startScheduler);
-    document.getElementById('stopBtn').addEventListener('click', stopScheduler);
-    document.getElementById('deviceOnBtn').addEventListener('click', turnDeviceOn);
-    document.getElementById('deviceOffBtn').addEventListener('click', turnDeviceOff);
-    document.getElementById('emergencyStopBtn').addEventListener('click', emergencyStop);
-
-        // Schedule configuration buttons
-        document.getElementById('addCycleBtn').addEventListener('click', addCycle);
-        document.getElementById('saveScheduleConfig').addEventListener('click', saveScheduleConfig);
-        document.getElementById('refreshLogs').addEventListener('click', loadLogs);
+    try {
+        // Control buttons
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const deviceOnBtn = document.getElementById('deviceOnBtn');
+        const deviceOffBtn = document.getElementById('deviceOffBtn');
+        const emergencyStopBtn = document.getElementById('emergencyStopBtn');
         
-        // Schedule view toggle
-        const scheduleViewToggle = document.getElementById('scheduleViewToggle');
-        if (scheduleViewToggle) {
-            scheduleViewToggle.addEventListener('change', switchScheduleView);
+        if (startBtn) {
+            startBtn.addEventListener('click', startScheduler);
+        } else {
+            console.warn('startBtn not found');
         }
-        
-        // Validation report button
-        const validateScheduleBtn = document.getElementById('validateScheduleBtn');
-        if (validateScheduleBtn) {
-            validateScheduleBtn.addEventListener('click', showValidationReport);
+        if (stopBtn) {
+            stopBtn.addEventListener('click', stopScheduler);
+        } else {
+            console.warn('stopBtn not found');
+        }
+        if (deviceOnBtn) {
+            deviceOnBtn.addEventListener('click', turnDeviceOn);
+        } else {
+            console.warn('deviceOnBtn not found');
+        }
+        if (deviceOffBtn) {
+            deviceOffBtn.addEventListener('click', turnDeviceOff);
+        } else {
+            console.warn('deviceOffBtn not found');
+        }
+        if (emergencyStopBtn) {
+            emergencyStopBtn.addEventListener('click', emergencyStop);
+        } else {
+            console.warn('emergencyStopBtn not found');
         }
 
-        // Settings buttons
-        document.getElementById('saveSettings').addEventListener('click', saveSettings);
-        document.getElementById('resetSettings').addEventListener('click', resetSettings);
+    // Schedule configuration buttons
+    const addCycleBtn = document.getElementById('addCycleBtn');
+    const saveScheduleConfigBtn = document.getElementById('saveScheduleConfig');
+    const refreshLogsBtn = document.getElementById('refreshLogs');
+    
+    if (addCycleBtn) addCycleBtn.addEventListener('click', addCycle);
+    if (saveScheduleConfigBtn) saveScheduleConfigBtn.addEventListener('click', saveScheduleConfig);
+    if (refreshLogsBtn) refreshLogsBtn.addEventListener('click', loadLogs);
+    
+    // Schedule view toggle
+    const scheduleViewToggle = document.getElementById('scheduleViewToggle');
+    if (scheduleViewToggle) {
+        scheduleViewToggle.addEventListener('change', switchScheduleView);
+    }
+    
+    // Validation report button
+    const validateScheduleBtn = document.getElementById('validateScheduleBtn');
+    if (validateScheduleBtn) {
+        validateScheduleBtn.addEventListener('click', showValidationReport);
+    }
+
+    // Settings buttons
+    const saveSettingsBtn = document.getElementById('saveSettings');
+    const resetSettingsBtn = document.getElementById('resetSettings');
+    
+    if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', saveSettings);
+    if (resetSettingsBtn) resetSettingsBtn.addEventListener('click', resetSettings);
 
     // Service management buttons
-    document.getElementById('daemonStartBtn').addEventListener('click', () => controlService('daemon', 'start'));
-    document.getElementById('daemonStopBtn').addEventListener('click', () => controlService('daemon', 'stop'));
-    document.getElementById('daemonRestartBtn').addEventListener('click', () => controlService('daemon', 'restart'));
-    document.getElementById('webappStartBtn').addEventListener('click', () => controlService('webapp', 'start'));
-    document.getElementById('webappStopBtn').addEventListener('click', () => controlService('webapp', 'stop'));
-    document.getElementById('webappRestartBtn').addEventListener('click', () => controlService('webapp', 'restart'));
+    const daemonStartBtn = document.getElementById('daemonStartBtn');
+    const daemonStopBtn = document.getElementById('daemonStopBtn');
+    const daemonRestartBtn = document.getElementById('daemonRestartBtn');
+    const webappStartBtn = document.getElementById('webappStartBtn');
+    const webappStopBtn = document.getElementById('webappStopBtn');
+    const webappRestartBtn = document.getElementById('webappRestartBtn');
+    
+    if (daemonStartBtn) daemonStartBtn.addEventListener('click', () => controlService('daemon', 'start'));
+    if (daemonStopBtn) daemonStopBtn.addEventListener('click', () => controlService('daemon', 'stop'));
+    if (daemonRestartBtn) daemonRestartBtn.addEventListener('click', () => controlService('daemon', 'restart'));
+    if (webappStartBtn) webappStartBtn.addEventListener('click', () => controlService('webapp', 'start'));
+    if (webappStopBtn) webappStopBtn.addEventListener('click', () => controlService('webapp', 'stop'));
+    if (webappRestartBtn) webappRestartBtn.addEventListener('click', () => controlService('webapp', 'restart'));
 
     // Auto-scroll checkbox
-    document.getElementById('autoScroll').addEventListener('change', (e) => {
-        if (e.target.checked) {
-            scrollLogsToBottom();
-        }
-    });
+    const autoScrollCheckbox = document.getElementById('autoScroll');
+    if (autoScrollCheckbox) {
+        autoScrollCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                scrollLogsToBottom();
+            }
+        });
+    }
+    } catch (error) {
+        console.error('Error setting up event listeners:', error);
+    }
 }
 
 function startPolling() {
@@ -289,10 +336,12 @@ function escapeHtml(text) {
 
 async function startScheduler() {
     try {
+        console.log('Starting scheduler...');
         const response = await fetch(`${API_BASE}/control/start`, {
             method: 'POST'
         });
         const result = await response.json();
+        console.log('Start scheduler response:', result);
         if (result.success) {
             showMessage('Scheduler started', 'success');
             updateStatus();
@@ -300,6 +349,7 @@ async function startScheduler() {
             showMessage(result.message, 'error');
         }
     } catch (error) {
+        console.error('Error starting scheduler:', error);
         showMessage('Error starting scheduler: ' + error.message, 'error');
     }
 }
@@ -323,34 +373,48 @@ async function stopScheduler() {
 
 async function turnDeviceOn() {
     try {
+        console.log('Turning device on...');
         const response = await fetch(`${API_BASE}/device/on`, {
             method: 'POST'
         });
         const result = await response.json();
+        console.log('Turn device on response:', result);
         if (result.success) {
             showMessage('Device turned ON', 'success');
+            // Refresh status immediately and again after a delay to ensure state updates
             updateStatus();
+            setTimeout(() => {
+                updateStatus();
+            }, 1500);
         } else {
             showMessage(result.message, 'error');
         }
     } catch (error) {
+        console.error('Error turning device on:', error);
         showMessage('Error turning device on: ' + error.message, 'error');
     }
 }
 
 async function turnDeviceOff() {
     try {
+        console.log('Turning device off...');
         const response = await fetch(`${API_BASE}/device/off`, {
             method: 'POST'
         });
         const result = await response.json();
+        console.log('Turn device off response:', result);
         if (result.success) {
             showMessage('Device turned OFF', 'success');
+            // Refresh status immediately and again after a delay to ensure state updates
             updateStatus();
+            setTimeout(() => {
+                updateStatus();
+            }, 1500);
         } else {
             showMessage(result.message, 'error');
         }
     } catch (error) {
+        console.error('Error turning device off:', error);
         showMessage('Error turning device off: ' + error.message, 'error');
     }
 }
@@ -400,8 +464,8 @@ async function loadScheduleConfig() {
             baseCycles = [];
         }
         
-        // Check if active adaptive is enabled
-        const activeAdaptiveEnabled = config.adaptation?.active_adaptive?.enabled || false;
+        // Check if adaptive is enabled
+        const adaptiveEnabled = config.adaptation?.adaptive?.enabled || false;
         
         // If adaptation is enabled, fetch adapted cycles
         if (adaptationEnabled) {
@@ -409,7 +473,7 @@ async function loadScheduleConfig() {
                 const adaptedResponse = await fetch(`${API_BASE}/config/schedule/adapted`);
                 if (adaptedResponse.ok) {
                     const adaptedData = await adaptedResponse.json();
-                    if (adaptedData.adapted && adaptedData.cycles) {
+                    if (adaptedData.adapted && adaptedData.cycles && adaptedData.cycles.length > 0) {
                         // Map API response to cycle format with factor information
                         adaptedCycles = adaptedData.cycles.map(cycle => ({
                             on_time: cycle.on_time,
@@ -420,14 +484,17 @@ async function loadScheduleConfig() {
                             temp_factor: cycle.temp_factor !== undefined ? cycle.temp_factor : cycle._temp_factor,
                             humidity_factor: cycle.humidity_factor !== undefined ? cycle.humidity_factor : cycle._humidity_factor
                         }));
-                        showingAdapted = true; // Show adapted by default
+                        showingAdapted = true; // Show adapted by default when available
+                        console.log(`Loaded ${adaptedCycles.length} adapted cycles`);
                     } else {
                         adaptedCycles = [];
                         showingAdapted = false;
+                        console.warn('Adaptation enabled but no adapted cycles available. Adaptation may still be initializing.');
                     }
                 } else {
                     adaptedCycles = [];
                     showingAdapted = false;
+                    console.warn(`Failed to fetch adapted schedule: HTTP ${adaptedResponse.status}`);
                 }
             } catch (error) {
                 console.error('Error fetching adapted schedule:', error);
@@ -440,12 +507,23 @@ async function loadScheduleConfig() {
         }
         
         // Set current cycles based on view
-        // If active adaptive is enabled, always show adapted cycles
-        if (activeAdaptiveEnabled && adaptedCycles.length > 0) {
+        // When adaptation is enabled, prioritize showing adapted cycles
+        if (adaptiveEnabled && adaptedCycles.length > 0) {
             cycles = adaptedCycles;
             showingAdapted = true;
+        } else if (adaptationEnabled) {
+            // Legacy adaptive mode: show adapted cycles if available, otherwise show base but indicate adaptation is active
+            if (adaptedCycles.length > 0) {
+                cycles = showingAdapted ? adaptedCycles : baseCycles;
+            } else {
+                // Adaptation enabled but cycles not available yet - show base cycles but mark as adapted mode
+                cycles = baseCycles;
+                showingAdapted = false; // Don't show as "adapted" since cycles aren't available
+            }
         } else {
-            cycles = showingAdapted && adaptedCycles.length > 0 ? adaptedCycles : baseCycles;
+            // No adaptation: show base cycles
+            cycles = baseCycles;
+            showingAdapted = false;
         }
         
         // Update UI
@@ -464,11 +542,11 @@ function updateScheduleViewControls() {
     const viewLabel = document.getElementById('scheduleViewLabel');
     const validateBtn = document.getElementById('validateScheduleBtn');
     
-    // Check if active adaptive is enabled (cycles have period info)
-    const activeAdaptiveEnabled = cycles.length > 0 && cycles[0].period !== undefined;
+    // Check if adaptive is enabled (cycles have period info)
+    const adaptiveEnabled = cycles.length > 0 && cycles[0].period !== undefined;
     
-    if (activeAdaptiveEnabled) {
-        // Active adaptive mode - show validation button, hide toggle
+    if (adaptiveEnabled) {
+        // Adaptive mode - show validation button, hide toggle
         if (viewControls) {
             viewControls.style.display = 'none';
         }
@@ -476,31 +554,47 @@ function updateScheduleViewControls() {
             validateBtn.style.display = 'inline-block';
         }
         if (viewTitle) {
-            viewTitle.textContent = 'Active Adaptive Schedule (Generated)';
+            viewTitle.textContent = 'Adaptive Schedule (Generated)';
             viewTitle.className = 'schedule-view-title';
         }
-    } else if (adaptationEnabled && adaptedCycles.length > 0) {
-        // Legacy adaptive mode - show toggle controls
-        if (viewControls) {
-            viewControls.style.display = 'flex';
-        }
-        if (validateBtn) {
-            validateBtn.style.display = 'none';
-        }
-        
-        // Update toggle state
-        if (viewToggle) {
-            viewToggle.checked = showingAdapted;
-        }
-        
-        // Update label and title
-        if (viewLabel) {
-            viewLabel.textContent = showingAdapted ? 'View: Adapted' : 'View: Base';
-        }
-        
-        if (viewTitle) {
-            viewTitle.textContent = showingAdapted ? 'Schedule Cycles (Adapted - Calculated)' : 'Schedule Cycles (Base)';
-            viewTitle.className = showingAdapted ? 'schedule-view-title' : '';
+    } else if (adaptationEnabled) {
+        // Legacy adaptive mode - show toggle controls if adapted cycles are available
+        if (adaptedCycles.length > 0) {
+            // Have adapted cycles - show toggle controls
+            if (viewControls) {
+                viewControls.style.display = 'flex';
+            }
+            if (validateBtn) {
+                validateBtn.style.display = 'none';
+            }
+            
+            // Update toggle state
+            if (viewToggle) {
+                viewToggle.checked = showingAdapted;
+            }
+            
+            // Update label and title
+            if (viewLabel) {
+                viewLabel.textContent = showingAdapted ? 'View: Adapted' : 'View: Base';
+            }
+            
+            if (viewTitle) {
+                viewTitle.textContent = showingAdapted ? 'Schedule Cycles (Adapted - Calculated)' : 'Schedule Cycles (Base)';
+                viewTitle.className = showingAdapted ? 'schedule-view-title' : '';
+            }
+        } else {
+            // Adaptation enabled but cycles not available yet - show base with adaptation indicator
+            if (viewControls) {
+                viewControls.style.display = 'none';
+            }
+            if (validateBtn) {
+                validateBtn.style.display = 'none';
+            }
+            
+            if (viewTitle) {
+                viewTitle.textContent = 'Schedule Cycles (Adaptation Active - Cycles Loading...)';
+                viewTitle.className = 'schedule-view-title';
+            }
         }
     } else {
         // No adaptation - hide everything
@@ -537,8 +631,8 @@ function renderCyclesTable() {
     
     if (cycles.length === 0) {
         const row = document.createElement('tr');
-        const isActiveAdaptive = false; // No cycles, so can't be active adaptive
-        const colspan = isActiveAdaptive ? 6 : 3;
+        const isAdaptive = false; // No cycles, so can't be adaptive
+        const colspan = isAdaptive ? 6 : 3;
         row.innerHTML = `<td colspan="${colspan}" style="text-align: center; padding: 20px; color: #666;">No cycles defined</td>`;
         tbody.appendChild(row);
         return;
@@ -551,12 +645,13 @@ function renderCyclesTable() {
         return timeA - timeB;
     });
     
-    // Check if active adaptive is enabled and we're showing active adaptive cycles
-    const isActiveAdaptive = cycles.length > 0 && cycles[0].period !== undefined;
-    const isReadOnly = (adaptationEnabled && showingAdapted) || isActiveAdaptive;
+    // Check if adaptive is enabled and we're showing adaptive cycles
+    const isAdaptive = cycles.length > 0 && cycles[0].period !== undefined;
+    // Schedule is read-only when adaptation is enabled (regardless of whether showing adapted or base cycles)
+    const isReadOnly = adaptationEnabled || isAdaptive;
     
-    // Update table header for active adaptive
-    if (isActiveAdaptive && thead) {
+    // Update table header for adaptive
+    if (isAdaptive && thead) {
         thead.innerHTML = `
             <tr>
                 <th>ON Time</th>
@@ -593,8 +688,8 @@ function renderCyclesTable() {
         const offDuration = cycle.off_duration_minutes || 0;
         const offDurationDisplay = offDuration.toFixed(1);
         
-        if (isActiveAdaptive) {
-            // Active adaptive display with factor breakdown
+        if (isAdaptive) {
+            // Adaptive display with factor breakdown
             const period = cycle.period || cycle._period || '-';
             const temp = cycle.temperature !== undefined ? cycle.temperature : (cycle._temp !== undefined ? cycle._temp : null);
             const humidity = cycle.humidity !== undefined ? cycle.humidity : (cycle._humidity !== undefined ? cycle._humidity : null);
@@ -628,7 +723,8 @@ function renderCyclesTable() {
                 </td>
             `;
         } else if (isReadOnly) {
-            // Read-only display for adapted cycles (legacy adaptive)
+            // Read-only display - show "Calculated" if showing adapted cycles, otherwise show adaptation status
+            const readOnlyLabel = showingAdapted ? 'Calculated' : (adaptationEnabled ? 'Adapted' : 'Read-only');
             row.innerHTML = `
                 <td>
                     <span style="font-weight: 500; color: #667eea;">${timeValue || '00:00'}</span>
@@ -637,7 +733,7 @@ function renderCyclesTable() {
                     <span style="font-weight: 500; color: #667eea;">${offDurationDisplay}</span>
                 </td>
                 <td>
-                    <span style="color: #666; font-size: 0.9em;">Calculated</span>
+                    <span style="color: #666; font-size: 0.9em;" title="${adaptationEnabled ? 'Schedule is automatically adjusted based on environmental factors' : 'Schedule is read-only'}">${readOnlyLabel}</span>
                 </td>
             `;
         } else {
@@ -694,7 +790,7 @@ function parseTimeForSort(timeStr) {
 
 async function showValidationReport() {
     try {
-        const response = await fetch(`${API_BASE}/config/schedule/active-adaptive/validate`);
+        const response = await fetch(`${API_BASE}/config/schedule/adaptive/validate`);
         if (response.ok) {
             const data = await response.json();
             const report = data.report || 'No validation report available.';
@@ -722,9 +818,14 @@ function addCycle() {
 }
 
 async function saveScheduleConfig() {
-    // Check if adaptation is enabled
+    // Refresh environment and schedule config to get latest state
+    // This ensures we have the most up-to-date adaptation status
     try {
-        const envResponse = await fetch(`${API_BASE}/environment`);
+        const [envResponse, scheduleResponse] = await Promise.all([
+            fetch(`${API_BASE}/environment`),
+            fetch(`${API_BASE}/config/schedule`)
+        ]);
+        
         if (envResponse.ok) {
             const env = await envResponse.json();
             if (env.adaptation_enabled) {
@@ -732,18 +833,19 @@ async function saveScheduleConfig() {
                 return;
             }
         }
+        
+        if (scheduleResponse.ok) {
+            const schedule = await scheduleResponse.json();
+            const adaptive = schedule.adaptation?.adaptive?.enabled || false;
+            
+            if (adaptive) {
+                showMessage('Schedule editing is disabled when Adaptive Scheduling is enabled. Disable it in Settings first.', 'error');
+                return;
+            }
+        }
     } catch (error) {
         console.error('Error checking adaptation status:', error);
-    }
-    
-    // Flood duration is now in Settings, not Schedule
-    // Check if active adaptive is enabled
-    const schedule = await fetch(`${API_BASE}/config/schedule`).then(r => r.json());
-    const activeAdaptive = schedule.adaptation?.active_adaptive?.enabled || false;
-    
-    if (activeAdaptive) {
-        showMessage('Schedule editing is disabled when Active Adaptive Scheduling is enabled. Disable it in Settings first.', 'error');
-        return;
+        // Continue anyway - backend will validate
     }
     
     if (cycles.length === 0) {
@@ -785,6 +887,10 @@ async function saveScheduleConfig() {
         const result = await response.json();
         if (result.success) {
             showMessage(result.message, 'success');
+            // Reload schedule config to reflect any changes
+            await loadScheduleConfig();
+            // Refresh environment data
+            updateEnvironment();
         } else {
             showMessage(result.message, 'error');
         }
@@ -928,9 +1034,9 @@ async function updateEnvironment() {
             document.getElementById('adaptationStatus').textContent =
                 env.adaptation_enabled ? 'Enabled' : 'Disabled';
             
-            // Update active adaptive status
-            document.getElementById('activeAdaptiveStatus').textContent =
-                env.active_adaptive_enabled ? 'Enabled' : 'Disabled';
+            // Update adaptive status
+            document.getElementById('adaptiveStatus').textContent =
+                env.adaptive_enabled ? 'Enabled' : 'Disabled';
             
             // Update schedule editing state based on adaptation
             await updateScheduleEditingState(env.adaptation_enabled);
@@ -941,11 +1047,11 @@ async function updateEnvironment() {
 }
 
 async function updateScheduleEditingState(adaptationEnabled) {
-    // Check if active adaptive is enabled
-    let activeAdaptiveEnabled = false;
+    // Check if adaptive is enabled
+    let adaptiveEnabled = false;
     try {
         const schedule = await fetch(`${API_BASE}/config/schedule`).then(r => r.json()).catch(() => ({}));
-        activeAdaptiveEnabled = schedule.adaptation?.active_adaptive?.enabled || false;
+        adaptiveEnabled = schedule.adaptation?.adaptive?.enabled || false;
     } catch (e) {
         // Ignore errors
     }
@@ -954,26 +1060,26 @@ async function updateScheduleEditingState(adaptationEnabled) {
     const addCycleBtn = document.getElementById('addCycleBtn');
     const saveScheduleBtn = document.getElementById('saveScheduleConfig');
     const cyclesTableBody = document.getElementById('cyclesTableBody');
-    const activeAdaptiveInfo = document.getElementById('activeAdaptiveInfo');
+    const adaptiveInfo = document.getElementById('adaptiveInfo');
     
-    // Show/hide active adaptive info
-    if (activeAdaptiveInfo) {
-        activeAdaptiveInfo.style.display = activeAdaptiveEnabled ? 'block' : 'none';
+    // Hide adaptive info (user doesn't want it displayed)
+    if (adaptiveInfo) {
+        adaptiveInfo.style.display = 'none';
     }
     
     // Disable/enable inputs
     if (addCycleBtn) {
-        addCycleBtn.disabled = adaptationEnabled || activeAdaptiveEnabled;
+        addCycleBtn.disabled = adaptationEnabled || adaptiveEnabled;
     }
     if (saveScheduleBtn) {
-        saveScheduleBtn.disabled = adaptationEnabled || activeAdaptiveEnabled;
+        saveScheduleBtn.disabled = adaptationEnabled || adaptiveEnabled;
     }
     
     // Disable cycle editing inputs
     if (cyclesTableBody) {
         const cycleInputs = cyclesTableBody.querySelectorAll('input, button');
         cycleInputs.forEach(input => {
-            input.disabled = adaptationEnabled || activeAdaptiveEnabled;
+            input.disabled = adaptationEnabled || adaptiveEnabled;
         });
     }
     
@@ -988,17 +1094,12 @@ async function updateScheduleEditingState(adaptationEnabled) {
         configPanel.insertBefore(infoBox, configPanel.firstChild);
     }
     
-    if (activeAdaptiveEnabled) {
-        // Update or add active adaptive info
-        let warningMsg = infoBox.querySelector('.adaptation-warning');
-        if (!warningMsg) {
-            warningMsg = document.createElement('p');
-            warningMsg.className = 'adaptation-warning';
-            warningMsg.style.color = '#0066cc';
-            warningMsg.style.fontWeight = 'bold';
-            infoBox.appendChild(warningMsg);
+    if (adaptiveEnabled) {
+        // Remove any existing adaptive message (user doesn't want it displayed)
+        const warningMsg = infoBox.querySelector('.adaptation-warning');
+        if (warningMsg) {
+            warningMsg.remove();
         }
-        warningMsg.textContent = '✅ Active Adaptive Scheduling is enabled. Schedule is generated automatically from environmental factors (Time of Day, Temperature, Humidity).';
     } else if (adaptationEnabled) {
         // Update or add adaptation warning
         let warningMsg = infoBox.querySelector('.adaptation-warning');
@@ -1091,26 +1192,26 @@ async function loadSettings() {
                 document.getElementById('floodDuration').value = schedule.flood_duration_minutes;
             }
             
-            // Active Adaptive settings
-            const activeAdaptive = adaptation.active_adaptive || {};
-            const activeAdaptiveEnabled = activeAdaptive.enabled || false;
-            document.getElementById('activeAdaptiveEnabled').checked = activeAdaptiveEnabled;
+            // Adaptive settings
+            const adaptive = adaptation.adaptive || {};
+            const adaptiveEnabled = adaptive.enabled || false;
+            document.getElementById('adaptiveEnabled').checked = adaptiveEnabled;
             
-            // Show/hide active adaptive settings
-            const activeAdaptiveSettings = document.getElementById('activeAdaptiveSettings');
-            if (activeAdaptiveSettings) {
-                activeAdaptiveSettings.style.display = activeAdaptiveEnabled ? 'block' : 'none';
+            // Show/hide adaptive settings
+            const adaptiveSettings = document.getElementById('adaptiveSettings');
+            if (adaptiveSettings) {
+                adaptiveSettings.style.display = adaptiveEnabled ? 'block' : 'none';
             }
             
-            // Load active adaptive config
-            if (activeAdaptiveEnabled) {
-                const todFreq = activeAdaptive.tod_frequencies || {};
+            // Load adaptive config
+            if (adaptiveEnabled) {
+                const todFreq = adaptive.tod_frequencies || {};
                 document.getElementById('todMorning').value = todFreq.morning || 18.0;
                 document.getElementById('todDay').value = todFreq.day || 28.0;
                 document.getElementById('todEvening').value = todFreq.evening || 18.0;
                 document.getElementById('todNight').value = todFreq.night || 118.0;
                 
-                const tempBands = activeAdaptive.temperature_bands || {};
+                const tempBands = adaptive.temperature_bands || {};
                 if (tempBands.cold) {
                     document.getElementById('tempColdMax').value = tempBands.cold.max || 15;
                     document.getElementById('tempColdFactor').value = tempBands.cold.factor || 1.15;
@@ -1130,7 +1231,7 @@ async function loadSettings() {
                     document.getElementById('tempHotFactor').value = tempBands.hot.factor || 0.70;
                 }
                 
-                const humidityBands = activeAdaptive.humidity_bands || {};
+                const humidityBands = adaptive.humidity_bands || {};
                 if (humidityBands.low) {
                     document.getElementById('humidityLowMax').value = humidityBands.low.max || 40;
                     document.getElementById('humidityLowFactor').value = humidityBands.low.factor || 0.9;
@@ -1145,7 +1246,7 @@ async function loadSettings() {
                     document.getElementById('humidityHighFactor').value = humidityBands.high.factor || 1.1;
                 }
                 
-                const constraints = activeAdaptive.constraints || {};
+                const constraints = adaptive.constraints || {};
                 document.getElementById('minWaitDuration').value = constraints.min_wait_duration || 5;
                 document.getElementById('maxWaitDuration').value = constraints.max_wait_duration || 180;
                 document.getElementById('minFloodDuration').value = constraints.min_flood_duration || 2;
@@ -1158,14 +1259,14 @@ async function loadSettings() {
     }
 }
 
-// Toggle active adaptive settings visibility
+// Toggle adaptive settings visibility
 document.addEventListener('DOMContentLoaded', () => {
-    const activeAdaptiveCheckbox = document.getElementById('activeAdaptiveEnabled');
-    const activeAdaptiveSettings = document.getElementById('activeAdaptiveSettings');
+    const adaptiveCheckbox = document.getElementById('adaptiveEnabled');
+    const adaptiveSettings = document.getElementById('adaptiveSettings');
     
-    if (activeAdaptiveCheckbox && activeAdaptiveSettings) {
-        activeAdaptiveCheckbox.addEventListener('change', (e) => {
-            activeAdaptiveSettings.style.display = e.target.checked ? 'block' : 'none';
+    if (adaptiveCheckbox && adaptiveSettings) {
+        adaptiveCheckbox.addEventListener('change', (e) => {
+            adaptiveSettings.style.display = e.target.checked ? 'block' : 'none';
         });
     }
 });
@@ -1226,15 +1327,15 @@ async function saveSettings() {
         // System settings - flood duration
         schedule.flood_duration_minutes = parseFloat(document.getElementById('floodDuration').value) || 2.0;
         
-        // Active Adaptive settings
-        const activeAdaptiveEnabled = document.getElementById('activeAdaptiveEnabled').checked;
-        adaptation.active_adaptive = {
-            enabled: activeAdaptiveEnabled,
+        // Adaptive settings
+        const adaptiveEnabled = document.getElementById('adaptiveEnabled').checked;
+        adaptation.adaptive = {
+            enabled: adaptiveEnabled,
             tod_frequencies: {
                 morning: parseFloat(document.getElementById('todMorning').value) || 18.0,
                 day: parseFloat(document.getElementById('todDay').value) || 28.0,
                 evening: parseFloat(document.getElementById('todEvening').value) || 18.0,
-                night: parseFloat(document.getElementById('todNight').value) || 118.0
+                night: parseFloat(document.getElementById('todNight').value) || 120.0
             },
             temperature_bands: {
                 cold: {
@@ -1293,6 +1394,8 @@ async function saveSettings() {
         const result = await response.json();
         if (response.ok) {
             showMessage('Settings saved successfully. Restart daemon for changes to take effect.', 'success');
+            // Reload schedule config to get updated state
+            await loadScheduleConfig();
             // Update schedule editing state after saving adaptation settings
             updateScheduleEditingState(adaptation.enabled);
             // Refresh environment data to get updated adaptation status

@@ -75,22 +75,35 @@ Alternatively, you can:
 
 ## Configuration
 
-The configuration file (`config/config.json`) uses the following structure:
+The configuration file (`config/config.json`) uses a structured format that supports multiple devices, sensors, and schedulers. See `config/config.json.example` for a complete example.
+
+### Basic Configuration Structure
 
 ```json
 {
-  "device": {
-    "ip_address": "192.168.1.XXX",
-    "email": "your_tapo_email@example.com",
-    "password": "your_tapo_password"
+  "devices": {
+    "devices": [
+      {
+        "device_id": "pump1",
+        "name": "Main Pump",
+        "brand": "tapo",
+        "type": "power_controller",
+        "ip_address": "192.168.1.XXX",
+        "email": "your_tapo_email@example.com",
+        "password": "your_tapo_password",
+        "auto_discovery": true
+      }
+    ]
   },
-  "cycle": {
-    "flood_duration_minutes": 15,
-    "drain_duration_minutes": 30,
-    "interval_minutes": 120
+  "growing_system": {
+    "type": "flood_drain",
+    "primary_device_id": "pump1"
   },
   "schedule": {
-    "enabled": true,
+    "type": "interval",
+    "flood_duration_minutes": 15,
+    "drain_duration_minutes": 30,
+    "interval_minutes": 120,
     "active_hours": {
       "start": "06:00",
       "end": "22:00"
@@ -99,27 +112,95 @@ The configuration file (`config/config.json`) uses the following structure:
   "logging": {
     "log_file": "logs/hydro_controller.log",
     "log_level": "INFO"
+  },
+  "web": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8000
   }
 }
 ```
 
 ### Configuration Options
 
-- **device.ip_address**: IP address of your Tapo P100 on your local network (used as initial/default)
-- **device.email**: Your Tapo account email address
-- **device.password**: Your Tapo account password
-- **device.auto_discovery**: If `true`, automatically discover device on network if configured IP fails (default: `true`)
-- **cycle.flood_duration_minutes**: How long to keep the pump ON (flood phase)
-- **cycle.drain_duration_minutes**: How long to keep the pump OFF (drain phase)
-- **cycle.interval_minutes**: Time between cycle starts (includes flood + drain + wait time)
-- **schedule.enabled**: Enable/disable time-based scheduling
-- **schedule.active_hours.start**: Start time for active cycle hours (HH:MM format)
-- **schedule.active_hours.end**: End time for active cycle hours (HH:MM format)
+#### Devices
+- **devices.devices[]**: Array of device configurations
+  - **device_id**: Unique identifier for the device
+  - **name**: Human-readable device name
+  - **brand**: Device brand (currently supports `"tapo"`)
+  - **type**: Device type (e.g., `"power_controller"`)
+  - **ip_address**: IP address of the device on your local network
+  - **email**: Tapo account email address
+  - **password**: Tapo account password
+  - **auto_discovery**: Automatically discover device if IP fails (default: `true`)
+
+#### Growing System
+- **growing_system.type**: Type of hydroponic system (e.g., `"flood_drain"`, `"nft"`)
+- **growing_system.primary_device_id**: ID of the primary device to control
+
+#### Schedule Types
+
+**Interval-Based Schedule:**
+```json
+{
+  "type": "interval",
+  "flood_duration_minutes": 15,
+  "drain_duration_minutes": 30,
+  "interval_minutes": 120,
+  "active_hours": {
+    "start": "06:00",
+    "end": "22:00"
+  }
+}
+```
+
+**Time-Based Schedule:**
+```json
+{
+  "type": "time_based",
+  "flood_duration_minutes": 2.0,
+  "cycles": [
+    {"on_time": "06:00", "off_duration_minutes": 18},
+    {"on_time": "12:00", "off_duration_minutes": 28},
+    {"on_time": "18:00", "off_duration_minutes": 18}
+  ]
+}
+```
+
+**Adaptive Schedule:**
+```json
+{
+  "type": "time_based",
+  "flood_duration_minutes": 2.0,
+  "adaptation": {
+    "enabled": true,
+    "location": {
+      "postcode": "2000",
+      "timezone": "Australia/Sydney"
+    },
+    "adaptive": {
+      "enabled": true,
+      "tod_frequencies": {
+        "morning": 18.0,
+        "day": 28.0,
+        "evening": 18.0,
+        "night": 118.0
+      }
+    }
+  }
+}
+```
+
+#### Logging
 - **logging.log_file**: Path to log file (will be created automatically)
 - **logging.log_level**: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+#### Web UI
 - **web.enabled**: Enable/disable web UI (default: `false`)
 - **web.host**: Host to bind web server to (default: `"0.0.0.0"` for all interfaces)
 - **web.port**: Port for web server (default: `8000`)
+
+For detailed configuration options, see [CONFIGURATION.md](docs/CONFIGURATION.md) or the example file `config/config.json.example`.
 
 ## Usage
 
@@ -369,6 +450,40 @@ If your Tapo P100 gets a new IP address from your router (DHCP reallocation):
 - **Network Resilience**: Handles network interruptions gracefully
 - **Auto-Discovery**: Automatically finds device on network if IP address changes (DHCP reallocation)
 
+## Architecture
+
+The application uses a modular, extensible architecture with clear separation of concerns:
+
+### Core Components
+
+- **Schedulers** (`src/schedulers/`): Implement the `IScheduler` interface
+  - `IntervalScheduler`: Fixed interval-based cycles
+  - `TimeBasedScheduler`: Time-of-day based cycles
+  - `AdaptiveScheduler`: Environmentally-adaptive scheduling
+  - `NFTScheduler`: Nutrient Film Technique scheduling (placeholder)
+
+- **Device Services** (`src/services/`): Device abstraction layer
+  - `DeviceRegistry`: Manages multiple device services
+  - `TapoDeviceService`: Tapo P100 implementation
+  - Supports multiple device brands (extensible)
+
+- **Environmental Services** (`src/services/environmental_service.py`):
+  - Centralised environmental data (temperature, humidity, daylight)
+  - Supports multiple data sources (BOM, sensors, etc.)
+
+- **Configuration** (`src/core/`):
+  - Pydantic-based schema validation
+  - Type-safe configuration loading
+  - Factory pattern for service creation
+
+- **Web API** (`src/web/`):
+  - FastAPI-based REST API
+  - Real-time status monitoring
+  - Configuration management
+  - Device control endpoints
+
+For detailed architecture documentation, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Development
 
 ### Project Structure
@@ -378,18 +493,52 @@ hydro_automation/
 ├── config/
 │   └── config.json.example    # Configuration template
 ├── src/
-│   ├── __init__.py
+│   ├── core/                  # Core interfaces and factories
+│   │   ├── scheduler_interface.py
+│   │   ├── scheduler_factory.py
+│   │   ├── config_schema.py
+│   │   └── config_validator.py
+│   ├── schedulers/            # Scheduler implementations
+│   │   ├── interval_scheduler.py
+│   │   ├── time_based_scheduler.py
+│   │   ├── adaptive_scheduler.py
+│   │   └── nft_scheduler.py
+│   ├── services/              # Service abstractions
+│   │   ├── device_service.py
+│   │   ├── sensor_service.py
+│   │   ├── actuator_service.py
+│   │   ├── environmental_service.py
+│   │   └── service_factory.py
+│   ├── device/                # Device implementations
+│   │   └── tapo_controller.py
+│   ├── data/                  # Data sources
+│   │   ├── bom_temperature.py
+│   │   ├── bom_stations.py
+│   │   └── daylight.py
+│   ├── adaptation/            # Adaptation strategies
+│   │   └── adaptor_interface.py
+│   ├── web/                   # Web UI and API
+│   │   ├── api.py
+│   │   ├── models.py
+│   │   └── static/
 │   ├── main.py                # Main application entry point
-│   ├── tapo_controller.py     # Tapo P100 device controller
-│   ├── scheduler.py           # Cycle scheduler
 │   ├── logger.py              # Logging configuration
-│   └── discover_device.py     # Device discovery script
-├── scripts/
-│   └── prevent_sleep.sh       # Mac sleep prevention script
+│   └── discover_device.py    # Device discovery script
+├── tests/                     # Test suite
+├── scripts/                   # Utility scripts
+├── docs/                      # Documentation
 ├── logs/                      # Log files directory
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
 ```
+
+### API Documentation
+
+The web API provides REST endpoints for monitoring and control. See [API.md](docs/API.md) for complete API documentation.
+
+### Migration Guide
+
+If you're upgrading from an older version, see [MIGRATION.md](docs/MIGRATION.md) for configuration migration instructions.
 
 ## License
 

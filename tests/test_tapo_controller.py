@@ -5,7 +5,7 @@ import asyncio
 from unittest.mock import Mock, MagicMock, patch, AsyncMock, call
 from typing import Optional
 
-from src.tapo_controller import TapoController
+from src.device.tapo_controller import TapoController
 
 
 class TestTapoController:
@@ -34,9 +34,9 @@ class TestTapoController:
         assert not controller.connected
         assert controller.device is None
 
-    @patch('src.tapo_controller.connect')
-    @patch('src.tapo_controller.AuthCredential')
-    @patch('src.tapo_controller.DeviceConnectConfiguration')
+    @patch('src.device.tapo_controller.connect')
+    @patch('src.device.tapo_controller.AuthCredential')
+    @patch('src.device.tapo_controller.DeviceConnectConfiguration')
     def test_connect_success(self, mock_config, mock_auth, mock_connect, controller, mock_logger):
         """Test successful connection."""
         mock_device = Mock()
@@ -47,7 +47,7 @@ class TestTapoController:
             pass
         mock_device.update = AsyncMock(side_effect=mock_update)
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=True)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -60,7 +60,7 @@ class TestTapoController:
             assert controller.connected
             assert controller.device == mock_device
 
-    @patch('src.tapo_controller.connect')
+    @patch('src.device.tapo_controller.connect')
     def test_connect_retry_on_failure(self, mock_connect, controller, mock_logger):
         """Test that connection retries on failure."""
         mock_connect.side_effect = [Exception("Connection failed"), Exception("Connection failed"), Mock()]
@@ -77,7 +77,7 @@ class TestTapoController:
             mock_device
         ]
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             def run_until_complete(coro):
                 # Simulate retries
@@ -96,8 +96,8 @@ class TestTapoController:
 
     def test_connect_max_retries_exceeded(self, controller, mock_logger):
         """Test that connection fails after max retries."""
-        with patch('src.tapo_controller.connect', side_effect=Exception("Connection failed")):
-            with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.connect', side_effect=Exception("Connection failed")):
+            with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
                 mock_loop = Mock()
                 mock_loop.run_until_complete = Mock(side_effect=Exception("Connection failed"))
                 mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -135,7 +135,7 @@ class TestTapoController:
         controller.device = mock_device
         controller.connected = True
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=True)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -166,7 +166,7 @@ class TestTapoController:
         controller.device = mock_device
         controller.connected = True
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=True)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -185,7 +185,7 @@ class TestTapoController:
         controller.device = mock_device
         controller.connected = True
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=True)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -195,7 +195,7 @@ class TestTapoController:
             result = controller.ensure_off()
             assert result is True
 
-    @patch('src.tapo_controller.TapoDiscovery')
+    @patch('src.device.tapo_controller.TapoDiscovery')
     def test_discover_device_success(self, mock_discovery, controller, mock_logger):
         """Test successful device discovery."""
         mock_discovered_device = Mock()
@@ -207,7 +207,7 @@ class TestTapoController:
         
         mock_discovery.scan = AsyncMock(side_effect=mock_scan)
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value="192.168.1.200")
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -217,7 +217,7 @@ class TestTapoController:
             result = controller.discover_device()
             assert result == "192.168.1.200"
 
-    @patch('src.tapo_controller.TapoDiscovery')
+    @patch('src.device.tapo_controller.TapoDiscovery')
     def test_discover_device_no_devices_found(self, mock_discovery, controller, mock_logger):
         """Test device discovery when no devices found."""
         async def mock_scan():
@@ -225,7 +225,7 @@ class TestTapoController:
         
         mock_discovery.scan = AsyncMock(side_effect=mock_scan)
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=None)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)
@@ -249,7 +249,7 @@ class TestTapoController:
         controller.device = mock_device
         controller.connected = True
         
-        with patch('src.tapo_controller.asyncio') as mock_asyncio:
+        with patch('src.device.tapo_controller.asyncio') as mock_asyncio:
             mock_loop = Mock()
             mock_loop.run_until_complete = Mock(return_value=None)
             mock_asyncio.get_event_loop = Mock(return_value=mock_loop)

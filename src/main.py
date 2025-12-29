@@ -1,16 +1,20 @@
 """Main application entry point."""
 
-import json
 import signal
 import sys
-import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .logger import setup_logger
-from .scheduler import CycleScheduler
-from .time_scheduler import TimeScheduler
-from .tapo_controller import TapoController
+from .core.config_validator import load_and_validate_config, ConfigValidationError
+from .core.scheduler_interface import IScheduler
+from .services.service_factory import (
+    create_device_registry,
+    create_sensor_registry,
+    create_actuator_registry,
+    create_environmental_service
+)
+from .core.scheduler_factory import SchedulerFactory
 
 
 class HydroController:
@@ -26,14 +30,15 @@ class HydroController:
         self.config_path = Path(config_path)
         self.config: Dict[str, Any] = {}
         self.logger = None
-        self.controller: TapoController = None
-        self.scheduler: CycleScheduler = None
+        self.device_registry = None
+        self.sensor_registry = None
+        self.actuator_registry = None
+        self.env_service = None
+        self.scheduler: Optional[IScheduler] = None
         self.shutdown_requested = False
         self.web_api = None
-        self.daylight_calc = None  # Daylight calculator instance
-        self.temperature_fetcher = None  # BOM temperature fetcher instance
 
-        # Load configuration
+        # Load and validate configuration
         self._load_config()
 
         # Setup logger
@@ -42,13 +47,10 @@ class HydroController:
         log_level = log_config.get("log_level", "INFO")
         self.logger = setup_logger(log_file, log_level)
 
-        # Initialise device controller
-        self._init_controller()
+        # Initialize registries and services
+        self._init_services()
 
-        # Initialise environmental data sources (for API access)
-        self._init_environmental_sources()
-
-        # Initialise scheduler
+        # Initialize scheduler
         self._init_scheduler()
 
         # Setup signal handlers for graceful shutdown
@@ -56,188 +58,52 @@ class HydroController:
         signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _load_config(self):
-        """Load configuration from JSON file."""
-        if not self.config_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
-
+        """Load and validate configuration from JSON file."""
         try:
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                self.config = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in configuration file: {e}")
+            self.config = load_and_validate_config(str(self.config_path))
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
+        except ConfigValidationError as e:
+            raise ValueError(f"Configuration validation failed: {e}")
 
-        # Validate required configuration sections
-        required_sections = ["device", "cycle"]
-        for section in required_sections:
-            if section not in self.config:
-                raise ValueError(f"Missing required configuration section: {section}")
+    def _init_services(self):
+        """Initialize device, sensor, actuator registries and environmental service."""
+        # Create device registry
+        devices_config = self.config.get("devices", {})
+        self.device_registry = create_device_registry(devices_config, self.logger)
 
-        # Validate device configuration
-        device_config = self.config["device"]
-        required_device_keys = ["ip_address", "email", "password"]
-        for key in required_device_keys:
-            if key not in device_config:
-                raise ValueError(f"Missing required device configuration: {key}")
+        # Create sensor registry
+        sensors_config = self.config.get("sensors", {})
+        self.sensor_registry = create_sensor_registry(sensors_config, self.logger)
 
-        # Validate cycle configuration
-        cycle_config = self.config["cycle"]
-        required_cycle_keys = ["flood_duration_minutes", "drain_duration_minutes", "interval_minutes"]
-        for key in required_cycle_keys:
-            if key not in cycle_config:
-                raise ValueError(f"Missing required cycle configuration: {key}")
+        # Create actuator registry
+        actuators_config = self.config.get("actuators", {})
+        self.actuator_registry = create_actuator_registry(actuators_config, self.logger)
 
-    def _init_controller(self):
-        """Initialise the Tapo device controller."""
-        device_config = self.config["device"]
-        auto_discovery = device_config.get("auto_discovery", True)
-        self.controller = TapoController(
-            ip_address=device_config["ip_address"],
-            email=device_config["email"],
-            password=device_config["password"],
-            logger=self.logger,
-            enable_auto_discovery=auto_discovery
-        )
-
-    def _init_environmental_sources(self):
-        """Initialize environmental data sources (daylight, temperature) for API access."""
+        # Create environmental service
         schedule_config = self.config.get("schedule", {})
-        adaptation_config = schedule_config.get("adaptation", {})
-        
-        # Initialize daylight calculator if location is configured (even if adaptation disabled)
-        location_config = adaptation_config.get("location", {})
-        postcode = location_config.get("postcode")
-        timezone = location_config.get("timezone")
-        
-        if postcode:
-            try:
-                from .daylight import DaylightCalculator
-                self.daylight_calc = DaylightCalculator(
-                    postcode=postcode,
-                    timezone=timezone,
-                    logger=self.logger
-                )
-                if self.logger:
-                    self.logger.info(f"Daylight calculator initialized for postcode {postcode}")
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"Failed to initialize daylight calculator: {e}")
-        
-        # Initialize temperature fetcher if temperature source is configured (even if adaptation disabled)
-        temp_config = adaptation_config.get("temperature", {})
-        source = temp_config.get("source", "bom")
-        
-        if source == "bom":
-            try:
-                from .bom_temperature import BOMTemperature
-                station_id = temp_config.get("station_id", "auto")
-                
-                # Auto-detect station if needed
-                if station_id == "auto":
-                    if self.daylight_calc and self.daylight_calc.location_info:
-                        lat = self.daylight_calc.location_info.latitude
-                        lon = self.daylight_calc.location_info.longitude
-                        temp_fetcher_temp = BOMTemperature(logger=self.logger)
-                        station_id = temp_fetcher_temp.find_nearest_station(lat, lon)
-                    else:
-                        # Try to use a default station if no location configured
-                        # Use Sydney Observatory Hill as default
-                        station_id = "94768"
-                        if self.logger:
-                            self.logger.info("Using default BOM station (Sydney) - configure postcode for nearest station")
-                
-                if station_id and station_id != "auto":
-                    self.temperature_fetcher = BOMTemperature(station_id=station_id, logger=self.logger)
-                    station_name = self.temperature_fetcher.station_name or station_id
-                    if self.logger:
-                        self.logger.info(f"BOM temperature fetcher initialized for {station_name} ({station_id})")
-            except Exception as e:
-                if self.logger:
-                    self.logger.warning(f"Failed to initialize temperature fetcher: {e}")
+        adaptation_config = schedule_config.get("adaptation", {}) or {}
+        self.env_service = create_environmental_service(adaptation_config, self.logger)
 
     def _init_scheduler(self):
-        """Initialise the scheduler (time-based or interval-based)."""
-        schedule_config = self.config.get("schedule", {})
-        schedule_type = schedule_config.get("type", "interval")  # "interval" or "time_based"
-
-        if schedule_type == "time_based":
-            # Use time-based scheduler with cycles (new format) or on_times (backward compatibility)
-            flood_duration_minutes = float(schedule_config.get("flood_duration_minutes", 2.0))
-            cycles = schedule_config.get("cycles", [])
-            on_times = schedule_config.get("on_times", [])
-            
-            # Prefer cycles format if available, otherwise fall back to on_times
-            base_scheduler = None
-            if cycles:
-                base_scheduler = TimeScheduler(
-                    controller=self.controller,
-                    cycles=cycles,
-                    flood_duration_minutes=flood_duration_minutes,
-                    logger=self.logger
-                )
-            elif on_times:
-                base_scheduler = TimeScheduler(
-                    controller=self.controller,
-                    on_times=on_times,
-                    flood_duration_minutes=flood_duration_minutes,
-                    logger=self.logger
-                )
-            else:
-                raise ValueError("time_based schedule requires either 'cycles' or 'on_times' in schedule configuration")
-            
-            # Check if adaptive scheduling is enabled
-            adaptation_config = schedule_config.get("adaptation", {})
-            if adaptation_config.get("enabled", False):
-                # Check if active adaptive is enabled
-                active_adaptive_config = adaptation_config.get("active_adaptive", {})
-                if active_adaptive_config.get("enabled", False):
-                    # Use active adaptive scheduler (completely independent)
-                    from .active_adaptive_scheduler import ActiveAdaptiveScheduler
-                    self.scheduler = ActiveAdaptiveScheduler(
-                        controller=self.controller,
-                        flood_duration_minutes=flood_duration_minutes,
-                        adaptation_config=adaptation_config,
-                        logger=self.logger
-                    )
-                else:
-                    # Use legacy adaptive scheduler
-                    from .adaptive_scheduler import AdaptiveScheduler
-                    # Get base cycles for adaptive scheduler
-                    base_cycles = cycles if cycles else [
-                        {"on_time": t.strftime("%H:%M"), "off_duration_minutes": 0}
-                        for t in base_scheduler.on_times
-                    ]
-                    self.scheduler = AdaptiveScheduler(
-                        base_cycles=base_cycles,
-                        controller=self.controller,
-                        flood_duration_minutes=flood_duration_minutes,
-                        adaptation_config=adaptation_config,
-                        logger=self.logger
-                    )
-            else:
-                self.scheduler = base_scheduler
-        else:
-            # Use interval-based scheduler (original)
-            cycle_config = self.config["cycle"]
-            active_hours = schedule_config.get("active_hours", {})
-            active_hours_start = active_hours.get("start")
-            active_hours_end = active_hours.get("end")
-
-            self.scheduler = CycleScheduler(
-                controller=self.controller,
-                flood_duration_minutes=float(cycle_config["flood_duration_minutes"]),
-                drain_duration_minutes=float(cycle_config["drain_duration_minutes"]),
-                interval_minutes=float(cycle_config["interval_minutes"]),
-                schedule_enabled=schedule_config.get("enabled", True),
-                active_hours_start=active_hours_start,
-                active_hours_end=active_hours_end,
-                logger=self.logger
-            )
+        """Initialize scheduler using factory."""
+        factory = SchedulerFactory(
+            device_registry=self.device_registry,
+            sensor_registry=self.sensor_registry,
+            actuator_registry=self.actuator_registry,
+            env_service=self.env_service,
+            logger=self.logger
+        )
+        self.scheduler = factory.create(self.config)
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
         if self.logger:
-            signal_name = signal.Signals(signum).name
-            self.logger.info(f"Received {signal_name} signal, initiating graceful shutdown...")
+            try:
+                signal_name = signal.Signals(signum).name
+                self.logger.info(f"Received {signal_name} signal, initiating graceful shutdown...")
+            except (ValueError, AttributeError):
+                self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         self.shutdown_requested = True
         self.stop()
 
@@ -248,10 +114,24 @@ class HydroController:
             self.logger.info("Hydroponic Controller Starting")
             self.logger.info("=" * 60)
 
-        # Connect to device
-        if not self.controller.connect():
+        # Connect to all devices
+        growing_system = self.config.get("growing_system", {})
+        primary_device_id = growing_system.get("primary_device_id")
+
+        if primary_device_id:
+            device = self.device_registry.get_device(primary_device_id)
+            if device:
+                if not device.connect():
+                    if self.logger:
+                        self.logger.error(f"Failed to connect to primary device {primary_device_id}. Exiting.")
+                    sys.exit(1)
+            else:
+                if self.logger:
+                    self.logger.error(f"Primary device {primary_device_id} not found in registry. Exiting.")
+                sys.exit(1)
+        else:
             if self.logger:
-                self.logger.error("Failed to connect to device. Exiting.")
+                self.logger.error("No primary_device_id specified in growing_system configuration. Exiting.")
             sys.exit(1)
 
         # Start scheduler
@@ -267,7 +147,7 @@ class HydroController:
         if self.logger:
             self.logger.info("Controller started successfully")
             self.logger.info("Press Ctrl+C to stop")
-        
+
         # Start web server if enabled
         self._start_web_server()
 
@@ -284,18 +164,18 @@ class HydroController:
     def _start_web_server(self):
         """Start web server if enabled in configuration."""
         web_config = self.config.get("web", {})
-        if not web_config.get("enabled", False):
+        if not web_config or not web_config.get("enabled", False):
             return
-        
+
         try:
             from .web.api import WebAPI
-            
+
             host = web_config.get("host", "0.0.0.0")
             port = web_config.get("port", 8000)
-            
+
             self.web_api = WebAPI(self, host=host, port=port)
             self.web_api.start()
-            
+
             if self.logger:
                 self.logger.info(f"Web UI started at http://{host}:{port}")
         except Exception as e:
@@ -317,6 +197,15 @@ class HydroController:
         if self.scheduler:
             self.scheduler.stop()
 
+        # Close all device connections
+        if self.device_registry:
+            for device in self.device_registry.get_all_devices():
+                try:
+                    device.close()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Error closing device connection: {e}")
+
         if self.logger:
             self.logger.info("Controller stopped")
 
@@ -325,7 +214,7 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Tapo P100 Hydroponic Flood & Drain Controller")
+    parser = argparse.ArgumentParser(description="Hydroponic Controller")
     parser.add_argument(
         "--config",
         type=str,
@@ -342,13 +231,13 @@ def main():
 
     try:
         app = HydroController(args.config)
-        
+
         # Override web config if --web flag is set
         if args.web:
             if "web" not in app.config:
                 app.config["web"] = {}
             app.config["web"]["enabled"] = True
-        
+
         app.start()
     except KeyboardInterrupt:
         print("\nShutdown requested by user")
@@ -363,4 +252,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

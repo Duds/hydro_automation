@@ -1,28 +1,28 @@
-"""Cycle scheduler for flood and drain operations."""
+"""Interval-based scheduler for flood and drain cycles."""
 
 import threading
 import time
 from datetime import datetime, time as dt_time
-from typing import Optional
+from typing import Optional, Dict, Any
 
-from .tapo_controller import TapoController
-
-
-class CycleState:
-    """Cycle state enumeration."""
-
-    IDLE = "idle"
-    FLOOD = "flood"
-    DRAIN = "drain"
-    WAITING = "waiting"
+from ..core.scheduler_interface import IScheduler
+from ..services.device_service import DeviceRegistry, IDeviceService
 
 
-class CycleScheduler:
-    """Scheduler for managing flood and drain cycles."""
+# State constants (replacing CycleState enum)
+STATE_IDLE = "idle"
+STATE_FLOOD = "flood"
+STATE_DRAIN = "drain"
+STATE_WAITING = "waiting"
+
+
+class IntervalScheduler(IScheduler):
+    """Scheduler for managing flood and drain cycles with fixed intervals."""
 
     def __init__(
         self,
-        controller: TapoController,
+        device_registry: DeviceRegistry,
+        device_id: str,
         flood_duration_minutes: float,
         drain_duration_minutes: float,
         interval_minutes: float,
@@ -32,10 +32,11 @@ class CycleScheduler:
         logger=None
     ):
         """
-        Initialise the cycle scheduler.
+        Initialise the interval scheduler.
 
         Args:
-            controller: TapoController instance
+            device_registry: Device registry containing devices
+            device_id: ID of the device to control
             flood_duration_minutes: Duration of flood cycle in minutes
             drain_duration_minutes: Duration of drain cycle in minutes
             interval_minutes: Interval between cycles in minutes
@@ -44,7 +45,8 @@ class CycleScheduler:
             active_hours_end: End time in HH:MM format (e.g., "22:00")
             logger: Optional logger instance
         """
-        self.controller = controller
+        self.device_registry = device_registry
+        self.device_id = device_id
         self.flood_duration_minutes = flood_duration_minutes
         self.drain_duration_minutes = drain_duration_minutes
         self.interval_minutes = interval_minutes
@@ -53,11 +55,19 @@ class CycleScheduler:
         self.active_hours_end = self._parse_time(active_hours_end) if active_hours_end else None
         self.logger = logger
 
-        self.state = CycleState.IDLE
+        self.state = STATE_IDLE
         self.running = False
         self.shutdown_requested = False
         self.thread: Optional[threading.Thread] = None
         self.lock = threading.Lock()
+
+    def _get_device(self) -> Optional[IDeviceService]:
+        """Get the device service instance.
+
+        Returns:
+            Device service or None if not found
+        """
+        return self.device_registry.get_device(self.device_id)
 
     @staticmethod
     def _parse_time(time_str: str) -> Optional[dt_time]:
@@ -99,17 +109,23 @@ class CycleScheduler:
 
     def _run_cycle(self):
         """Execute a single flood and drain cycle."""
+        device = self._get_device()
+        if not device:
+            if self.logger:
+                self.logger.error(f"Device {self.device_id} not found in registry")
+            return
+
         if self.logger:
             self.logger.info("=" * 60)
             self.logger.info("Starting new flood/drain cycle")
 
         # Flood phase
         with self.lock:
-            self.state = CycleState.FLOOD
+            self.state = STATE_FLOOD
         if self.logger:
             self.logger.info(f"FLOOD phase: Turning device ON for {self.flood_duration_minutes} minutes")
 
-        if self.controller.turn_on(verify=True):
+        if device.turn_on(verify=True):
             flood_duration_seconds = self.flood_duration_minutes * 60
             start_time = time.time()
             while time.time() - start_time < flood_duration_seconds and not self.shutdown_requested:
@@ -120,11 +136,11 @@ class CycleScheduler:
 
         # Drain phase
         with self.lock:
-            self.state = CycleState.DRAIN
+            self.state = STATE_DRAIN
         if self.logger:
             self.logger.info(f"DRAIN phase: Turning device OFF for {self.drain_duration_minutes} minutes")
 
-        if self.controller.turn_off(verify=True):
+        if device.turn_off(verify=True):
             drain_duration_seconds = self.drain_duration_minutes * 60
             start_time = time.time()
             while time.time() - start_time < drain_duration_seconds and not self.shutdown_requested:
@@ -134,19 +150,23 @@ class CycleScheduler:
                 self.logger.error("Failed to turn device off for drain phase")
 
         with self.lock:
-            self.state = CycleState.WAITING
+            self.state = STATE_WAITING
         if self.logger:
             self.logger.info("Cycle completed, entering wait phase")
 
     def _scheduler_loop(self):
         """Main scheduler loop running in separate thread."""
         if self.logger:
-            self.logger.info("Cycle scheduler started")
-            self.logger.info(f"Cycle configuration: Flood={self.flood_duration_minutes}min, "
-                           f"Drain={self.drain_duration_minutes}min, Interval={self.interval_minutes}min")
+            self.logger.info("Interval scheduler started")
+            self.logger.info(
+                f"Cycle configuration: Flood={self.flood_duration_minutes}min, "
+                f"Drain={self.drain_duration_minutes}min, Interval={self.interval_minutes}min"
+            )
             if self.schedule_enabled and self.active_hours_start and self.active_hours_end:
-                self.logger.info(f"Active hours: {self.active_hours_start.strftime('%H:%M')} - "
-                               f"{self.active_hours_end.strftime('%H:%M')}")
+                self.logger.info(
+                    f"Active hours: {self.active_hours_start.strftime('%H:%M')} - "
+                    f"{self.active_hours_end.strftime('%H:%M')}"
+                )
 
         cycle_count = 0
 
@@ -177,9 +197,9 @@ class CycleScheduler:
                 time.sleep(1)
 
         if self.logger:
-            self.logger.info("Cycle scheduler stopped")
+            self.logger.info("Interval scheduler stopped")
 
-    def start(self):
+    def start(self) -> None:
         """Start the scheduler in a separate thread."""
         if self.running:
             if self.logger:
@@ -191,9 +211,9 @@ class CycleScheduler:
         self.thread = threading.Thread(target=self._scheduler_loop, daemon=True)
         self.thread.start()
         if self.logger:
-            self.logger.info("Scheduler thread started")
+            self.logger.info("Interval scheduler thread started")
 
-    def stop(self, timeout: float = 10.0):
+    def stop(self, timeout: float = 10.0) -> None:
         """
         Stop the scheduler gracefully.
 
@@ -204,18 +224,18 @@ class CycleScheduler:
             return
 
         if self.logger:
-            self.logger.info("Stopping scheduler...")
+            self.logger.info("Stopping interval scheduler...")
 
         self.shutdown_requested = True
         self.running = False
 
         # Ensure device is turned off
-        if self.controller.is_connected():
+        device = self._get_device()
+        if device and device.is_connected():
             if self.logger:
                 self.logger.info("Ensuring device is turned off before shutdown")
-            self.controller.ensure_off()
-            # Close the device connection
-            self.controller.close()
+            device.ensure_off()
+            device.close()
 
         # Wait for thread to finish
         if self.thread and self.thread.is_alive():
@@ -225,10 +245,10 @@ class CycleScheduler:
                     self.logger.warning("Scheduler thread did not stop within timeout")
             else:
                 if self.logger:
-                    self.logger.info("Scheduler stopped successfully")
+                    self.logger.info("Interval scheduler stopped successfully")
 
         with self.lock:
-            self.state = CycleState.IDLE
+            self.state = STATE_IDLE
 
     def get_state(self) -> str:
         """
@@ -243,4 +263,49 @@ class CycleScheduler:
     def is_running(self) -> bool:
         """Check if scheduler is running."""
         return self.running
+
+    def get_next_event_time(self) -> Optional[datetime]:
+        """
+        Get the next scheduled event time.
+
+        For interval scheduler, this is the next cycle start time.
+
+        Returns:
+            Datetime of next event, or None if scheduler not running
+        """
+        if not self.running:
+            return None
+
+        # For interval scheduler, next event is after current interval
+        # This is a simplified calculation - actual next time depends on current state
+        # For now, return None as it's complex to calculate accurately
+        # TODO: Implement proper next event calculation based on current state
+        return None
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive scheduler status for API.
+
+        Returns:
+            Dictionary containing scheduler status information
+        """
+        device = self._get_device()
+        device_info = device.get_device_info() if device else None
+
+        return {
+            "scheduler_type": "interval",
+            "running": self.running,
+            "state": self.get_state(),
+            "device_id": self.device_id,
+            "device_name": device_info.name if device_info else None,
+            "device_connected": device.is_connected() if device else False,
+            "device_state": device.is_device_on() if device else None,
+            "flood_duration_minutes": self.flood_duration_minutes,
+            "drain_duration_minutes": self.drain_duration_minutes,
+            "interval_minutes": self.interval_minutes,
+            "schedule_enabled": self.schedule_enabled,
+            "active_hours_start": self.active_hours_start.strftime("%H:%M") if self.active_hours_start else None,
+            "active_hours_end": self.active_hours_end.strftime("%H:%M") if self.active_hours_end else None,
+            "next_event_time": self.get_next_event_time().isoformat() if self.get_next_event_time() else None
+        }
 

@@ -63,83 +63,69 @@ class WebAPI:
             """Get current system status."""
             try:
                 scheduler = self.controller.scheduler
-                device = self.controller.controller
-                
-                # Handle adaptive scheduler wrapper
-                base_scheduler = scheduler
-                if hasattr(scheduler, 'base_scheduler'):
-                    base_scheduler = scheduler.base_scheduler
-                
-                scheduler_running = scheduler.is_running() if scheduler else False
-                scheduler_state = scheduler.get_state() if scheduler else "idle"
-                device_connected = device.is_connected() if device else False
-                device_state = device.is_device_on() if device_connected else None
-                device_ip = device.ip_address if device else None
-                
-                # Calculate next event time and time until next cycle
-                next_event_time = None
+                if not scheduler:
+                    raise HTTPException(status_code=404, detail="Scheduler not initialised")
+
+                # Use unified scheduler interface
+                scheduler_status = scheduler.get_status()
+                scheduler_running = scheduler.is_running()
+                scheduler_state = scheduler.get_state()
+
+                # Get primary device from device registry
+                growing_system = self.controller.config.get("growing_system", {})
+                primary_device_id = growing_system.get("primary_device_id")
+                device = None
+                device_connected = False
+                device_state = None
+                device_ip = None
+
+                if primary_device_id and self.controller.device_registry:
+                    device = self.controller.device_registry.get_device(primary_device_id)
+                    if device:
+                        device_connected = device.is_connected()
+                        device_state = device.is_device_on()
+                        device_info = device.get_device_info()
+                        device_ip = device_info.ip_address
+
+                # Get next event time from scheduler status
+                next_event_time = scheduler_status.get("next_event_time")
                 time_until_next_cycle = None
-                if scheduler_running and base_scheduler:
-                    # Try to get next event time for TimeScheduler
+                if next_event_time:
                     try:
-                        from datetime import time as dt_time
-                        if hasattr(base_scheduler, '_get_next_on_time') and hasattr(base_scheduler, '_time_until_next_event'):
-                            now_time = datetime.now().time()
-                            next_time = base_scheduler._get_next_on_time(now_time)
-                            if next_time:
-                                seconds_until = base_scheduler._time_until_next_event(next_time)
-                                next_dt = datetime.now().timestamp() + seconds_until
-                                next_event_time = datetime.fromtimestamp(next_dt).strftime("%Y-%m-%d %H:%M:%S")
-                                
-                                # Format time until next cycle in human-readable format
-                                hours = int(seconds_until // 3600)
-                                minutes = int((seconds_until % 3600) // 60)
-                                seconds = int(seconds_until % 60)
-                                
-                                if hours > 0:
-                                    time_until_next_cycle = f"{hours}h {minutes}m"
-                                elif minutes > 0:
-                                    time_until_next_cycle = f"{minutes}m {seconds}s"
-                                else:
-                                    time_until_next_cycle = f"{seconds}s"
+                        next_dt = datetime.fromisoformat(next_event_time)
+                        delta = next_dt - datetime.now()
+                        seconds_until = delta.total_seconds()
+                        
+                        # Format time until next cycle in human-readable format
+                        hours = int(seconds_until // 3600)
+                        minutes = int((seconds_until % 3600) // 60)
+                        seconds = int(seconds_until % 60)
+                        
+                        if hours > 0:
+                            time_until_next_cycle = f"{hours}h {minutes}m"
+                        elif minutes > 0:
+                            time_until_next_cycle = f"{minutes}m {seconds}s"
+                        else:
+                            time_until_next_cycle = f"{seconds}s"
                     except Exception:
-                        # If we can't calculate next event time, leave it as None
                         pass
-                
-                # Determine current time period
+
+                # Determine current time period (simple detection)
                 current_time_period = None
                 try:
-                    from datetime import time as dt_time
                     now_time = datetime.now().time()
-                    
-                    # Check if we have an adaptive scheduler with period detection
-                    from ..adaptive_scheduler import AdaptiveScheduler
-                    if isinstance(scheduler, AdaptiveScheduler):
-                        # Use adaptive scheduler's period detection method
-                        sunrise = None
-                        sunset = None
-                        if hasattr(self.controller, 'daylight_calc') and self.controller.daylight_calc:
-                            sunrise, sunset = self.controller.daylight_calc.get_sunrise_sunset()
-                        if hasattr(scheduler, '_get_time_period'):
-                            current_time_period = scheduler._get_time_period(now_time, sunrise, sunset)
+                    hour = now_time.hour
+                    if 6 <= hour < 9:
+                        current_time_period = "morning"
+                    elif 9 <= hour < 18:
+                        current_time_period = "day"
+                    elif 18 <= hour < 20:
+                        current_time_period = "evening"
                     else:
-                        # Simple period detection based on time of day
-                        hour = now_time.hour
-                        if 6 <= hour < 9:
-                            current_time_period = "morning"
-                        elif 9 <= hour < 18:
-                            current_time_period = "day"
-                        elif 18 <= hour < 20:
-                            current_time_period = "evening"
-                        else:
-                            current_time_period = "night"
-                except Exception as e:
-                    # If we can't determine period, leave it as None
-                    # Log error but don't fail the status endpoint
-                    if hasattr(self.controller, 'logger') and self.controller.logger:
-                        self.controller.logger.debug(f"Could not determine time period: {e}")
+                        current_time_period = "night"
+                except Exception:
                     pass
-                
+
                 return StatusResponse(
                     controller_running=not self.controller.shutdown_requested,
                     scheduler_running=scheduler_running,
@@ -151,6 +137,8 @@ class WebAPI:
                     time_until_next_cycle=time_until_next_cycle,
                     current_time_period=current_time_period
                 )
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting status: {str(e)}")
 
@@ -159,8 +147,8 @@ class WebAPI:
             """Get environmental data (temperature, sunrise/sunset)."""
             try:
                 schedule_config = self.controller.config.get("schedule", {})
-                adaptation_config = schedule_config.get("adaptation", {})
-                
+                adaptation_config = schedule_config.get("adaptation", {}) or {}
+
                 result = {
                     "temperature": None,
                     "humidity": None,
@@ -169,67 +157,57 @@ class WebAPI:
                     "sunrise": None,
                     "sunset": None,
                     "adaptation_enabled": adaptation_config.get("enabled", False),
-                    "active_adaptive_enabled": adaptation_config.get("active_adaptive", {}).get("enabled", False),
+                    "adaptive_enabled": adaptation_config.get("adaptive", {}).get("enabled", False) if isinstance(adaptation_config.get("adaptive"), dict) else False,
                     "location_configured": False
                 }
-                
-                # Get daylight calculator (from controller or scheduler)
-                daylight_calc = None
-                if hasattr(self.controller, 'daylight_calc') and self.controller.daylight_calc:
-                    daylight_calc = self.controller.daylight_calc
-                elif hasattr(self.controller.scheduler, 'daylight_calc') and self.controller.scheduler.daylight_calc:
-                    daylight_calc = self.controller.scheduler.daylight_calc
-                
-                # Get sunrise/sunset
-                if daylight_calc:
-                    sunrise, sunset = daylight_calc.get_sunrise_sunset()
-                    if sunrise:
-                        result["sunrise"] = sunrise.strftime("%H:%M")
-                    if sunset:
-                        result["sunset"] = sunset.strftime("%H:%M")
-                    result["location_configured"] = True
-                
-                # Get temperature fetcher (from controller or scheduler)
-                temp_fetcher = None
-                if hasattr(self.controller, 'temperature_fetcher') and self.controller.temperature_fetcher:
-                    temp_fetcher = self.controller.temperature_fetcher
-                elif hasattr(self.controller.scheduler, 'temperature_fetcher') and self.controller.scheduler.temperature_fetcher:
-                    temp_fetcher = self.controller.scheduler.temperature_fetcher
-                
-                # Fetch/update temperature if fetcher is available
-                if temp_fetcher:
-                    # Check if we need to fetch (if never fetched or stale)
-                    temp_config = adaptation_config.get("temperature", {})
-                    update_interval = temp_config.get("update_interval_minutes", 60)
-                    
-                    should_fetch = False
-                    if temp_fetcher.last_update is None:
-                        should_fetch = True
-                    else:
-                        from datetime import datetime, timedelta
-                        time_since_update = datetime.now() - temp_fetcher.last_update
-                        if time_since_update.total_seconds() >= update_interval * 60:
+
+                # Get environmental service
+                env_service = self.controller.env_service
+                if env_service:
+                    # Get daylight calculator
+                    if env_service.daylight_calc:
+                        sunrise, sunset = env_service.daylight_calc.get_sunrise_sunset()
+                        if sunrise:
+                            result["sunrise"] = sunrise.strftime("%H:%M")
+                        if sunset:
+                            result["sunset"] = sunset.strftime("%H:%M")
+                        result["location_configured"] = True
+
+                    # Get temperature service
+                    if env_service.temperature_service:
+                        temp_service = env_service.temperature_service
+                        # Check if we need to fetch (if never fetched or stale)
+                        temp_config = adaptation_config.get("temperature", {})
+                        update_interval = temp_config.get("update_interval_minutes", 60)
+
+                        should_fetch = False
+                        if temp_service.last_update is None:
                             should_fetch = True
-                    
-                    if should_fetch:
-                        # Fetch fresh temperature
-                        temp_fetcher.fetch_temperature()
-                    
-                    # Return temperature and humidity data
-                    result["temperature"] = temp_fetcher.last_temperature
-                    result["humidity"] = temp_fetcher.last_humidity
-                    station_display = (
-                        f"{temp_fetcher.station_name} ({temp_fetcher.station_id})"
-                        if temp_fetcher.station_name
-                        else f"Station {temp_fetcher.station_id}"
-                    )
-                    result["temperature_source"] = f"BOM {station_display}"
-                    result["temperature_station_id"] = temp_fetcher.station_id
-                    result["temperature_station_name"] = temp_fetcher.station_name
-                    result["temperature_last_update"] = (
-                        temp_fetcher.last_update.isoformat() if temp_fetcher.last_update else None
-                    )
-                
+                        else:
+                            from datetime import timedelta
+                            time_since_update = datetime.now() - temp_service.last_update
+                            if time_since_update.total_seconds() >= update_interval * 60:
+                                should_fetch = True
+
+                        if should_fetch:
+                            # Fetch fresh temperature
+                            temp_service.fetch_temperature()
+
+                        # Return temperature and humidity data
+                        result["temperature"] = temp_service.last_temperature
+                        result["humidity"] = temp_service.last_humidity
+                        station_display = (
+                            f"{temp_service.station_name} ({temp_service.station_id})"
+                            if temp_service.station_name
+                            else f"Station {temp_service.station_id}"
+                        )
+                        result["temperature_source"] = f"BOM {station_display}"
+                        result["temperature_station_id"] = temp_service.station_id
+                        result["temperature_station_name"] = temp_service.station_name
+                        result["temperature_last_update"] = (
+                            temp_service.last_update.isoformat() if temp_service.last_update else None
+                        )
+
                 return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting environment data: {str(e)}")
@@ -263,15 +241,15 @@ class WebAPI:
             try:
                 config = self.controller.config.copy()
                 
-                # Sanitise - remove passwords
-                if "device" in config:
-                    device_config = config["device"].copy()
-                    if "password" in device_config:
-                        device_config["password"] = "***"
-                    config["device"] = device_config
+                # Sanitise - remove passwords from devices
+                if "devices" in config and "devices" in config["devices"]:
+                    devices_list = config["devices"]["devices"]
+                    for device_config in devices_list:
+                        if "password" in device_config:
+                            device_config["password"] = "***"
                 
                 return ConfigResponse(
-                    cycle=config.get("cycle", {}),
+                    cycle={},  # Cycle config removed in new format (part of schedule)
                     schedule=config.get("schedule", {}),
                     web=config.get("web", {})
                 )
@@ -282,15 +260,24 @@ class WebAPI:
         async def get_device_info():
             """Get device information."""
             try:
-                device = self.controller.controller
+                growing_system = self.controller.config.get("growing_system", {})
+                primary_device_id = growing_system.get("primary_device_id")
+
+                if not primary_device_id or not self.controller.device_registry:
+                    raise HTTPException(status_code=404, detail="Device not found")
+
+                device = self.controller.device_registry.get_device(primary_device_id)
                 if not device:
-                    raise HTTPException(status_code=404, detail="Device controller not initialised")
-                
+                    raise HTTPException(status_code=404, detail="Device not found in registry")
+
+                device_info = device.get_device_info()
                 return DeviceInfoResponse(
-                    ip_address=device.ip_address,
+                    ip_address=device_info.ip_address or "",
                     connected=device.is_connected(),
                     state=device.is_device_on()
                 )
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting device info: {str(e)}")
 
@@ -331,18 +318,26 @@ class WebAPI:
         async def turn_device_on():
             """Manually turn device ON."""
             try:
-                device = self.controller.controller
+                growing_system = self.controller.config.get("growing_system", {})
+                primary_device_id = growing_system.get("primary_device_id")
+
+                if not primary_device_id or not self.controller.device_registry:
+                    raise HTTPException(status_code=404, detail="Device not found")
+
+                device = self.controller.device_registry.get_device(primary_device_id)
                 if not device:
-                    raise HTTPException(status_code=404, detail="Device controller not initialised")
-                
+                    raise HTTPException(status_code=404, detail="Device not found in registry")
+
                 if not device.is_connected():
                     raise HTTPException(status_code=503, detail="Device not connected")
-                
+
                 success = device.turn_on(verify=True)
                 if success:
                     return ControlResponse(success=True, message="Device turned ON")
                 else:
                     return ControlResponse(success=False, message="Failed to turn device ON")
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error turning device on: {str(e)}")
 
@@ -350,18 +345,26 @@ class WebAPI:
         async def turn_device_off():
             """Manually turn device OFF."""
             try:
-                device = self.controller.controller
+                growing_system = self.controller.config.get("growing_system", {})
+                primary_device_id = growing_system.get("primary_device_id")
+
+                if not primary_device_id or not self.controller.device_registry:
+                    raise HTTPException(status_code=404, detail="Device not found")
+
+                device = self.controller.device_registry.get_device(primary_device_id)
                 if not device:
-                    raise HTTPException(status_code=404, detail="Device controller not initialised")
-                
+                    raise HTTPException(status_code=404, detail="Device not found in registry")
+
                 if not device.is_connected():
                     raise HTTPException(status_code=503, detail="Device not connected")
-                
+
                 success = device.turn_off(verify=True)
                 if success:
                     return ControlResponse(success=True, message="Device turned OFF")
                 else:
                     return ControlResponse(success=False, message="Failed to turn device OFF")
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error turning device off: {str(e)}")
 
@@ -369,13 +372,16 @@ class WebAPI:
         async def get_device_state():
             """Get current device state."""
             try:
-                device = self.controller.controller
-                if not device:
-                    raise HTTPException(status_code=404, detail="Device controller not initialised")
-                
-                if not device.is_connected():
+                growing_system = self.controller.config.get("growing_system", {})
+                primary_device_id = growing_system.get("primary_device_id")
+
+                if not primary_device_id or not self.controller.device_registry:
                     return {"connected": False, "state": None}
-                
+
+                device = self.controller.device_registry.get_device(primary_device_id)
+                if not device or not device.is_connected():
+                    return {"connected": False, "state": None}
+
                 state = device.is_device_on()
                 return {"connected": True, "state": state}
             except Exception as e:
@@ -387,21 +393,23 @@ class WebAPI:
             """Get schedule configuration."""
             try:
                 schedule_config = self.controller.config.get("schedule", {}).copy()
-                
+
                 # Add current environmental data to response
-                if hasattr(self.controller, 'daylight_calc') and self.controller.daylight_calc:
-                    sunrise, sunset = self.controller.daylight_calc.get_sunrise_sunset()
-                    if sunrise:
-                        schedule_config["_current_sunrise"] = sunrise.strftime("%H:%M")
-                    if sunset:
-                        schedule_config["_current_sunset"] = sunset.strftime("%H:%M")
-                
-                if hasattr(self.controller, 'temperature_fetcher') and self.controller.temperature_fetcher:
-                    temp_fetcher = self.controller.temperature_fetcher
-                    schedule_config["_current_temperature"] = temp_fetcher.last_temperature
-                    schedule_config["_temperature_station_id"] = temp_fetcher.station_id
-                    schedule_config["_temperature_station_name"] = temp_fetcher.station_name
-                
+                env_service = self.controller.env_service
+                if env_service:
+                    if env_service.daylight_calc:
+                        sunrise, sunset = env_service.daylight_calc.get_sunrise_sunset()
+                        if sunrise:
+                            schedule_config["_current_sunrise"] = sunrise.strftime("%H:%M")
+                        if sunset:
+                            schedule_config["_current_sunset"] = sunset.strftime("%H:%M")
+
+                    if env_service.temperature_service:
+                        temp_service = env_service.temperature_service
+                        schedule_config["_current_temperature"] = temp_service.last_temperature
+                        schedule_config["_temperature_station_id"] = temp_service.station_id
+                        schedule_config["_temperature_station_name"] = temp_service.station_name
+
                 return schedule_config
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting schedule config: {str(e)}")
@@ -412,10 +420,10 @@ class WebAPI:
             try:
                 scheduler = self.controller.scheduler
                 
-                # Check if scheduler is an ActiveAdaptiveScheduler
-                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
-                if isinstance(scheduler, ActiveAdaptiveScheduler):
-                    # Get adapted cycles from active adaptive scheduler
+                # Check if scheduler is an AdaptiveScheduler
+                from ..schedulers.adaptive_scheduler import AdaptiveScheduler
+                if isinstance(scheduler, AdaptiveScheduler):
+                    # Get adapted cycles from adaptive scheduler
                     adapted_cycles = scheduler.get_adapted_cycles()
                     formatted_cycles = []
                     for cycle in adapted_cycles:
@@ -442,60 +450,10 @@ class WebAPI:
                     
                     return {
                         "adapted": True,
-                        "active_adaptive": True,
+                        "adaptive": True,
                         "cycles": formatted_cycles,
                         "base_cycles": base_cycles
                     }
-                
-                # Check if scheduler is an AdaptiveScheduler (legacy)
-                from ..adaptive_scheduler import AdaptiveScheduler
-                if isinstance(scheduler, AdaptiveScheduler):
-                    # Get adapted cycles from base_scheduler (contains active adapted cycles)
-                    base_scheduler = scheduler.base_scheduler
-                    if hasattr(base_scheduler, 'cycles') and base_scheduler.cycles:
-                        # Format cycles for JSON response
-                        adapted_cycles = []
-                        for cycle in base_scheduler.cycles:
-                            on_time = cycle.get("on_time")
-                            if on_time:
-                                # Convert time object to string if needed
-                                if hasattr(on_time, 'strftime'):
-                                    on_time_str = on_time.strftime("%H:%M")
-                                else:
-                                    on_time_str = str(on_time)
-                                
-                                adapted_cycles.append({
-                                    "on_time": on_time_str,
-                                    "off_duration_minutes": cycle.get("off_duration_minutes", 0)
-                                })
-                        
-                        return {
-                            "adapted": True,
-                            "cycles": adapted_cycles,
-                            "base_cycles": scheduler.base_cycles if hasattr(scheduler, 'base_cycles') else []
-                        }
-                    elif hasattr(scheduler, 'adapted_cycles') and scheduler.adapted_cycles:
-                        # Fallback to adapted_cycles if base_scheduler.cycles not available
-                        adapted_cycles = []
-                        for cycle in scheduler.adapted_cycles:
-                            on_time = cycle.get("on_time")
-                            if on_time:
-                                if hasattr(on_time, 'strftime'):
-                                    on_time_str = on_time.strftime("%H:%M")
-                                else:
-                                    on_time_str = str(on_time)
-                                
-                                adapted_cycles.append({
-                                    "on_time": on_time_str,
-                                    "off_duration_minutes": cycle.get("off_duration_minutes", 0)
-                                })
-                        
-                        return {
-                            "adapted": True,
-                            "active_adaptive": False,
-                            "cycles": adapted_cycles,
-                            "base_cycles": scheduler.base_cycles if hasattr(scheduler, 'base_cycles') else []
-                        }
                 
                 # Adaptation not enabled or no adapted cycles available
                 # Return base cycles
@@ -504,21 +462,21 @@ class WebAPI:
                 
                 return {
                     "adapted": False,
-                    "active_adaptive": False,
+                    "adaptive": False,
                     "cycles": base_cycles,
                     "base_cycles": base_cycles
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting adapted schedule: {str(e)}")
 
-        @self.app.get("/api/config/schedule/active-adaptive")
-        async def get_active_adaptive_schedule():
-            """Get active adaptive schedule (if enabled)."""
+        @self.app.get("/api/config/schedule/adaptive")
+        async def get_adaptive_schedule():
+            """Get adaptive schedule (if enabled)."""
             try:
                 scheduler = self.controller.scheduler
                 
-                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
-                if isinstance(scheduler, ActiveAdaptiveScheduler):
+                from ..schedulers.adaptive_scheduler import AdaptiveScheduler
+                if isinstance(scheduler, AdaptiveScheduler):
                     adapted_cycles = scheduler.get_adapted_cycles()
                     formatted_cycles = []
                     for cycle in adapted_cycles:
@@ -551,22 +509,22 @@ class WebAPI:
                     "event_count": 0
                 }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Error getting active adaptive schedule: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error getting adaptive schedule: {str(e)}")
 
-        @self.app.get("/api/config/schedule/active-adaptive/validate")
-        async def validate_active_adaptive():
-            """Compare active adaptive schedule with base schedule (testing only)."""
+        @self.app.get("/api/config/schedule/adaptive/validate")
+        async def validate_adaptive():
+            """Compare adaptive schedule with base schedule (testing only)."""
             try:
                 scheduler = self.controller.scheduler
                 
-                from ..active_adaptive_scheduler import ActiveAdaptiveScheduler
+                from ..schedulers.adaptive_scheduler import AdaptiveScheduler
                 from ..adaptive_validation import AdaptiveValidator
                 
-                if not isinstance(scheduler, ActiveAdaptiveScheduler):
-                    raise HTTPException(status_code=400, detail="Active adaptive is not enabled")
+                if not isinstance(scheduler, AdaptiveScheduler):
+                    raise HTTPException(status_code=400, detail="Adaptive scheduling is not enabled")
                 
-                # Get active adaptive schedule
-                active_cycles = scheduler.get_adapted_cycles()
+                # Get adaptive schedule
+                adaptive_cycles = scheduler.get_adapted_cycles()
                 
                 # Get base schedule
                 schedule_config = self.controller.config.get("schedule", {})
@@ -575,10 +533,16 @@ class WebAPI:
                 if not base_cycles:
                     raise HTTPException(status_code=400, detail="No base schedule available for comparison")
                 
+                # Get sunrise/sunset for period calculation
+                sunrise = None
+                sunset = None
+                if hasattr(scheduler, 'daylight_calc') and scheduler.daylight_calc:
+                    sunrise, sunset = scheduler.daylight_calc.get_sunrise_sunset()
+                
                 # Validate
                 validator = AdaptiveValidator(threshold=0.5)
-                comparison = validator.compare_with_base(active_cycles, base_cycles)
-                report = validator.generate_validation_report(active_cycles, base_cycles)
+                comparison = validator.compare_with_base(adaptive_cycles, base_cycles, sunrise, sunset)
+                report = validator.generate_validation_report(adaptive_cycles, base_cycles, sunrise, sunset)
                 
                 return {
                     "comparison": comparison,
@@ -590,7 +554,7 @@ class WebAPI:
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Error validating active adaptive schedule: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Error validating adaptive schedule: {str(e)}")
 
         @self.app.put("/api/config/schedule", response_model=ControlResponse)
         async def update_schedule_config(request: Request):
@@ -601,18 +565,59 @@ class WebAPI:
                 update_dict = body
                 
                 config = self.controller.config
-                schedule_config = config.get("schedule", {})
-                adaptation_config = schedule_config.get("adaptation", {})
-                adaptation_enabled = adaptation_config.get("enabled", False)
+                schedule_config = config.get("schedule", {}).copy()
+                adaptation_config = schedule_config.get("adaptation", {}).copy()
+                
+                # Check incoming request for adaptation config updates first
+                # This allows users to disable adaptation and save schedule in the same request
+                # or save schedule after disabling adaptation
+                incoming_adaptation = update_dict.get("adaptation", {})
+                if incoming_adaptation:
+                    # Merge incoming adaptation config to check current state
+                    adaptation_config.update(incoming_adaptation)
+                
+                # Determine adaptation status from incoming request or current config
+                # If incoming request has adaptation config, use that; otherwise use current config
+                if incoming_adaptation:
+                    # Use incoming adaptation config to determine status
+                    adaptation_enabled = incoming_adaptation.get("enabled", adaptation_config.get("enabled", False))
+                    # Get adaptive from incoming request, fallback to current config
+                    current_adaptive = adaptation_config.get("adaptive", {})
+                    incoming_adaptive = incoming_adaptation.get("adaptive", current_adaptive)
+                    adaptive_enabled = incoming_adaptive.get("enabled", False) if isinstance(incoming_adaptive, dict) else False
+                else:
+                    # Use current config
+                    adaptation_enabled = adaptation_config.get("enabled", False)
+                    adaptive_config = adaptation_config.get("adaptive", {})
+                    adaptive_enabled = adaptive_config.get("enabled", False) if isinstance(adaptive_config, dict) else False
                 
                 # Check if adaptation is enabled and user is trying to modify schedule (not just adaptation config)
+                # Only block if adaptation is actually enabled (not being disabled in this request)
                 if adaptation_enabled:
-                    # Allow adaptation config updates, but block schedule changes
-                    if "cycles" in update_dict or "on_times" in update_dict or "flood_duration_minutes" in update_dict:
+                    # When Adaptive Scheduling is enabled, allow flood_duration_minutes (it's a system setting)
+                    # and adaptation config updates, but block base schedule changes
+                    if "cycles" in update_dict or "on_times" in update_dict:
+                        if adaptive_enabled:
+                            # Adaptive Scheduling is enabled - block base schedule changes
+                            raise HTTPException(
+                                status_code=403,
+                                detail="Base schedule editing is disabled when Adaptive Scheduling is enabled. "
+                                       "Adaptive Scheduling generates schedules automatically. "
+                                       "You can modify Adaptive Scheduling settings in the Settings tab."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=403,
+                                detail="Schedule editing is disabled when adaptation is enabled. "
+                                       "Disable adaptation first to modify the schedule manually."
+                            )
+                    # Allow flood_duration_minutes when Adaptive Scheduling is enabled (it's a system setting)
+                    # Block it only for regular adaptation mode
+                    if "flood_duration_minutes" in update_dict and not adaptive_enabled:
                         raise HTTPException(
                             status_code=403,
-                            detail="Schedule editing is disabled when adaptation is enabled. "
-                                   "Disable adaptation first to modify the schedule manually."
+                            detail="Flood duration editing is disabled when adaptation is enabled. "
+                                   "Disable adaptation first to modify flood duration manually."
                         )
                 
                 # Handle cycles if present
@@ -660,13 +665,22 @@ class WebAPI:
                 with open(self.controller.config_path, "w", encoding="utf-8") as f:
                     json.dump(config, f, indent=2)
                 
-                # Reload config
-                self.controller.config = config
+                # Reload config from file to ensure consistency
+                # This ensures that any file system caching issues are resolved
+                try:
+                    with open(self.controller.config_path, "r", encoding="utf-8") as f:
+                        self.controller.config = json.load(f)
+                except Exception:
+                    # If reload fails, use the in-memory config we just saved
+                    self.controller.config = config
                 
                 return ControlResponse(
                     success=True,
                     message="Schedule configuration updated. Restart required for changes to take effect."
                 )
+            except HTTPException:
+                # Re-raise HTTPExceptions (like 403 Forbidden) without wrapping
+                raise
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid schedule configuration: {str(e)}")
             except Exception as e:
@@ -674,35 +688,57 @@ class WebAPI:
 
         @self.app.get("/api/config/cycle")
         async def get_cycle_config():
-            """Get cycle configuration."""
+            """Get cycle configuration (deprecated - now part of schedule config)."""
             try:
-                return self.controller.config.get("cycle", {})
+                # Cycle config is now part of schedule config for interval-based scheduling
+                schedule_config = self.controller.config.get("schedule", {})
+                if schedule_config.get("type") == "interval":
+                    return {
+                        "flood_duration_minutes": schedule_config.get("flood_duration_minutes", 15),
+                        "drain_duration_minutes": schedule_config.get("drain_duration_minutes", 30),
+                        "interval_minutes": schedule_config.get("interval_minutes", 120)
+                    }
+                return {}  # Empty for time-based schedules
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error getting cycle config: {str(e)}")
 
         @self.app.put("/api/config/cycle", response_model=ControlResponse)
         async def update_cycle_config(update: CycleConfigUpdate):
-            """Update cycle configuration."""
+            """Update cycle configuration (deprecated - now part of schedule config)."""
             try:
                 config = self.controller.config
-                cycle_config = config.get("cycle", {})
-                
+                schedule_config = config.get("schedule", {})
+
+                # Only update if interval-based schedule
+                if schedule_config.get("type") != "interval":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Cycle config only applies to interval-based schedules"
+                    )
+
                 # Update fields
                 update_dict = update.dict(exclude_none=True)
-                cycle_config.update(update_dict)
-                config["cycle"] = cycle_config
-                
+                schedule_config.update(update_dict)
+                config["schedule"] = schedule_config
+
                 # Save to file
                 with open(self.controller.config_path, "w", encoding="utf-8") as f:
                     json.dump(config, f, indent=2)
-                
-                # Reload config
-                self.controller.config = config
-                
+
+                # Reload config from file to ensure consistency
+                try:
+                    with open(self.controller.config_path, "r", encoding="utf-8") as f:
+                        self.controller.config = json.load(f)
+                except Exception:
+                    # If reload fails, use the in-memory config we just saved
+                    self.controller.config = config
+
                 return ControlResponse(
                     success=True,
                     message="Cycle configuration updated. Restart required for changes to take effect."
                 )
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error updating cycle config: {str(e)}")
 
@@ -878,7 +914,7 @@ class WebAPI:
         async def get_bom_stations(q: Optional[str] = None):
             """Get all BOM stations or search by query."""
             try:
-                from ..bom_stations import get_all_stations, search_stations
+                from ..data.bom_stations import get_all_stations, search_stations
                 
                 if q:
                     stations = search_stations(q)
@@ -893,7 +929,7 @@ class WebAPI:
         async def get_bom_station(station_id: str):
             """Get BOM station information by ID."""
             try:
-                from ..bom_stations import get_station_info
+                from ..data.bom_stations import get_station_info
                 
                 info = get_station_info(station_id)
                 if not info:
@@ -936,7 +972,7 @@ class WebAPI:
                     raise HTTPException(status_code=404, detail=f"Could not get coordinates for postcode {postcode}")
                 
                 # Find nearest station
-                from ..bom_stations import find_nearest_station
+                from ..data.bom_stations import find_nearest_station
                 
                 result = find_nearest_station(float(latitude), float(longitude))
                 if not result:

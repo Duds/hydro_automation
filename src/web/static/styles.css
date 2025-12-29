@@ -492,6 +492,110 @@ section h2 {
     margin-bottom: 20px;
 }
 
+/* Multi-column form layouts */
+.settings-section .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.settings-section .form-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.settings-section .form-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.settings-section .form-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+/* Band/group styling for related fields */
+.band-group {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 15px;
+}
+
+.band-group h5 {
+    margin: 0 0 12px 0;
+    color: #667eea;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.band-group .form-group {
+    margin-bottom: 15px;
+}
+
+.band-group .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* Inline form groups for related fields (e.g., min/max/factor) */
+.form-group-inline {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.form-group-inline > .form-group {
+    flex: 1;
+    min-width: 120px;
+    margin-bottom: 0;
+}
+
+.form-group-inline label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+}
+
+.form-group-inline input[type="number"] {
+    width: 100%;
+    padding: 8px;
+    border: 2px solid #e9ecef;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.form-group-inline input[type="number"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Compact form groups for small inputs */
+.form-group-compact {
+    margin-bottom: 12px;
+}
+
+.form-group-compact label {
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+}
+
+.form-group-compact input,
+.form-group-compact select {
+    padding: 8px;
+    font-size: 0.95rem;
+}
+
 .settings-section .form-group label {
     display: block;
     margin-bottom: 8px;
@@ -669,6 +773,17 @@ section h2 {
 
 /* Flood & Drain Visual Indicator */
 
+/* Responsive form grids */
+@media (max-width: 1024px) {
+    .settings-section .form-grid-3 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .settings-section .form-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 768px) {
     header {
         flex-direction: column;
@@ -681,6 +796,22 @@ section h2 {
 
     .button-group {
         flex-direction: column;
+    }
+    
+    .settings-section .form-grid,
+    .settings-section .form-grid-2,
+    .settings-section .form-grid-3,
+    .settings-section .form-grid-4 {
+        grid-template-columns: 1fr;
+    }
+    
+    .form-group-inline {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .form-group-inline > .form-group {
+        min-width: 100%;
     }
 
     .schedule-header {
