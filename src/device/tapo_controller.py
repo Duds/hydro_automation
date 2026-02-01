@@ -504,7 +504,7 @@ class TapoController:
                             await asyncio.sleep(1.0)
                         else:
                             if self.logger:
-                                self.logger.error("Failed to turn off device after all retry attempts")
+                                self.logger.error("[SAFETY_OFF_FAILURE] Failed to turn off device after all retry attempts")
                             self._consecutive_failures += 1
                             return False
 
@@ -530,7 +530,7 @@ class TapoController:
                         await asyncio.sleep(1.0)
                     else:
                         if self.logger:
-                            self.logger.error("Failed to turn off device after all retry attempts")
+                            self.logger.error("[SAFETY_OFF_FAILURE] Failed to turn off device after all retry attempts")
                         self._consecutive_failures += 1
                         return False
 
@@ -549,7 +549,7 @@ class TapoController:
                         f"Device may be unresponsive."
                     )
                 else:
-                    self.logger.error(f"Error turning device off: {e}")
+                    self.logger.error(f"[SAFETY_OFF_FAILURE] Error turning device off: {e}")
             self._consecutive_failures += 1
             return False
 
@@ -629,7 +629,7 @@ class TapoController:
                     return True
             except Exception as e:
                 if self.logger:
-                    self.logger.error(f"Error ensuring device is off: {e}")
+                    self.logger.error(f"[SAFETY_OFF_FAILURE] Error ensuring device is off: {e}")
                 return False
 
         try:
@@ -637,7 +637,7 @@ class TapoController:
             return self._run_async(_ensure_off_async())
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Error ensuring device is off: {e}")
+                self.logger.error(f"[SAFETY_OFF_FAILURE] Error ensuring device is off: {e}")
             return False
 
     def close(self):

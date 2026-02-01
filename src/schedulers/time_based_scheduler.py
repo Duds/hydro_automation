@@ -1,15 +1,17 @@
 """Time-based scheduler for scheduled flood/drain cycles."""
 
+import subprocess
 import threading
 import time
 from datetime import datetime, time as dt_time, timedelta
 from typing import List, Optional, Dict, Any
 
-from ..core.scheduler_interface import IScheduler
+from .base_scheduler import BaseScheduler
 from ..services.device_service import DeviceRegistry, IDeviceService
+from .flood_timer import start_flood_timer, cancel_flood_timer
 
 
-class TimeBasedScheduler(IScheduler):
+class TimeBasedScheduler(BaseScheduler):
     """Scheduler that executes ON/OFF cycles at specific times with variable OFF durations."""
 
     def __init__(
@@ -65,6 +67,11 @@ class TimeBasedScheduler(IScheduler):
         self.current_cycle_index = 0  # Track current cycle for cascading behavior
         self.use_cascading = True  # Enable cascading OFF duration behavior
         self.just_completed_cycle = False  # Flag to track if we just completed a cycle in cascading mode
+
+        # Subprocess-based flood timer (immune to macOS thread suspension)
+        self._flood_timer: Optional[subprocess.Popen] = None
+        self._flood_timer_lock = threading.Lock()
+        self._api_url = "http://localhost:8000"
 
     def _get_device(self) -> Optional[IDeviceService]:
         """Get the device service instance.
@@ -220,11 +227,78 @@ class TimeBasedScheduler(IScheduler):
                     f"for {self.flood_duration_minutes} minutes"
                 )
 
-            if device.turn_on(verify=True):
-                flood_duration_seconds = self.flood_duration_minutes * 60
-                flood_start = time.time()
-                while time.time() - flood_start < flood_duration_seconds and not self.shutdown_requested:
-                    time.sleep(1)
+            # Start flood timer BEFORE calling turn_on() to account for time taken by the operation
+            flood_duration_seconds = self.flood_duration_minutes * 60
+            flood_start = time.time()
+            
+            if self.logger:
+                self.logger.info(f"Starting turn_on() call, flood_duration={flood_duration_seconds}s")
+            
+            turn_on_result = device.turn_on(verify=True)
+            
+            # Calculate elapsed time during turn_on() call
+            elapsed_during_turn_on = time.time() - flood_start
+            
+            if self.logger:
+                self.logger.info(
+                    f"turn_on() returned {turn_on_result} after {elapsed_during_turn_on:.2f}s"
+                )
+            
+            if turn_on_result:
+                # Calculate remaining flood time after turn_on() call
+                remaining_flood_time = flood_duration_seconds - elapsed_during_turn_on
+                
+                if remaining_flood_time > 0:
+                    # Use subprocess timer - OS-managed, immune to Python thread suspension
+                    if self.logger:
+                        self.logger.info(f"Starting flood timer for {remaining_flood_time:.1f}s (subprocess)")
+                    
+                    try:
+                        with self._flood_timer_lock:
+                            if self._flood_timer:
+                                cancel_flood_timer(self._flood_timer, self.logger)
+                                self._flood_timer = None
+                            self._flood_timer = start_flood_timer(
+                                remaining_flood_time,
+                                self._api_url,
+                                self.logger,
+                            )
+                        
+                        # Wait for subprocess to complete (or shutdown)
+                        check_interval = 0.5
+                        while self._flood_timer and self._flood_timer.poll() is None:
+                            if self.shutdown_requested:
+                                break
+                            time.sleep(check_interval)
+                        
+                        # If subprocess failed (e.g. API unreachable), turn off directly
+                        exit_code = self._flood_timer.poll() if self._flood_timer else None
+                        if exit_code is not None and exit_code != 0:
+                            if self.logger:
+                                self.logger.warning(f"Flood timer subprocess failed (exit {exit_code}), turning off directly")
+                            device = self._get_device()
+                            if device:
+                                device.turn_off(verify=True)
+                        elif self.logger:
+                            self.logger.info("Flood timer completed - device turning off")
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.error(f"Flood timer failed: {e}. Turning off device directly.")
+                        device = self._get_device()
+                        if device:
+                            device.turn_off(verify=True)
+                    finally:
+                        with self._flood_timer_lock:
+                            if self._flood_timer:
+                                cancel_flood_timer(self._flood_timer, self.logger)
+                                self._flood_timer = None
+                else:
+                    # If turn_on() took longer than flood duration, log and turn off
+                    if self.logger:
+                        self.logger.warning(
+                            f"turn_on() took {elapsed_during_turn_on:.1f}s, which exceeds "
+                            f"flood duration of {flood_duration_seconds:.1f}s. Turning off immediately."
+                        )
             else:
                 if self.logger:
                     self.logger.error("Failed to turn device on for flood phase")
@@ -241,7 +315,10 @@ class TimeBasedScheduler(IScheduler):
                     f"DRAIN: Turning device OFF at {datetime.now().strftime('%H:%M:%S')}"
                 )
 
-            device.turn_off(verify=True)
+            # Turn device off
+            if not device.turn_off(verify=True):
+                if self.logger:
+                    self.logger.error("[SAFETY_OFF_FAILURE] Critical fail to turn off pump during drain phase!")
 
             # Wait for OFF duration (cascading: next cycle starts immediately after OFF duration)
             if off_duration_minutes is not None and off_duration_minutes > 0:
@@ -303,12 +380,20 @@ class TimeBasedScheduler(IScheduler):
         self.shutdown_requested = True
         self.running = False
 
+        # Cancel any active flood timer subprocess
+        with self._flood_timer_lock:
+            if self._flood_timer:
+                cancel_flood_timer(self._flood_timer, self.logger)
+                self._flood_timer = None
+
         # Ensure device is turned off
         device = self._get_device()
         if device and device.is_connected():
             if self.logger:
                 self.logger.info("Ensuring device is turned off before shutdown")
-            device.ensure_off()
+            if not device.ensure_off():
+                if self.logger:
+                    self.logger.error("[SAFETY_OFF_FAILURE] Critical fail to ensure pump is off during shutdown!")
 
         # Wait for thread to finish
         if self.thread and self.thread.is_alive():

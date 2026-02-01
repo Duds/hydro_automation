@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 
-class IScheduler(ABC):
-    """Unified interface for all scheduler implementations."""
+class BaseScheduler(ABC):
+    """Unified interface and base for all scheduler implementations."""
 
     @abstractmethod
     def start(self) -> None:
