@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -37,9 +38,16 @@ class WebAPI:
         self.host = host
         self.port = port
         self.app = FastAPI(title="Hydroponic Controller API")
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*", "null"],  # "null" for file:// (e.g. standalone HTML)
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         self.server = None
         self.thread: Optional[threading.Thread] = None
-        
+
         self._setup_routes()
 
     def _setup_routes(self):

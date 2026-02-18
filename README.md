@@ -111,6 +111,10 @@ The MCP server lets you **monitor and control your hydroponic system from Cursor
 - `src/web/`: FastAPI web server and simple JavaScript UI.
 - `src/mcp_server.py`: MCP server for AI-powered monitoring and control.
 
+## Future considerations
+
+- **Energy monitoring**: The Tapo P100 is on/off only (no current, voltage, or power reporting). Supporting Tapo P110 or P115 in future would allow power/energy monitoring (e.g. pump run verification, usage tracking).
+
 ## Safety & Reliability
 
 - **Mac Sleep Prevention**: Use `caffeinate` or Amphetamine to keep the controller running.
