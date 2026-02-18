@@ -1,0 +1,60 @@
+======================================================================
+HYDROPONIC CONTROLLER - MCP SETUP INSTRUCTIONS
+======================================================================
+
+Run these commands in your terminal:
+
+1. Navigate to the project (adjust path if you moved the project):
+   cd /path/to/hydro_automation
+
+2. Run the setup script (it auto-detects the project directory):
+   ./setup_mcp.sh
+
+   This will install the MCP dependencies and show you the exact config
+   with the correct paths for your installation.
+
+3. Copy the config shown by the script and add/update it in:
+   ~/Library/Application Support/Claude/claude_desktop_config.json
+
+   Merge the "hydro" entry into the existing "mcpServers" object if you
+   have other MCP servers configured.
+
+4. Restart Claude Desktop
+
+5. If hydro won't load, check the hydro-specific log at:
+   ~/Library/Logs/Claude/mcp-server-hydro.log
+   (Claude may open the Filesystem log by default — use the hydro log for debugging.)
+
+That's it! The MCP server will be available with tools like:
+- hydro_get_status
+- hydro_device_on / hydro_device_off
+- hydro_scheduler_start / hydro_scheduler_stop
+- hydro_get_logs
+- hydro_update_schedule
+
+======================================================================
+
+If you prefer to do it manually:
+
+cd /path/to/hydro_automation
+source venv/bin/activate
+pip install "mcp[cli]>=1.0.0"
+
+Then add this to ~/Library/Application Support/Claude/claude_desktop_config.json
+(replace /path/to/hydro_automation with your actual project path):
+
+{
+  "mcpServers": {
+    "hydro": {
+      "command": "/path/to/hydro_automation/venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "/path/to/hydro_automation",
+"env": {
+    "HYDRO_API_URL": "http://localhost:8000",
+    "PYTHONPATH": "/path/to/hydro_automation"
+  }
+    }
+  }
+}
+
+======================================================================

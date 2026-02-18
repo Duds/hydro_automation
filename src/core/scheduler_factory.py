@@ -1,167 +1,81 @@
-"""Factory for creating scheduler instances."""
+"""Factory for creating scheduler instances based on configuration."""
 
-from typing import Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, Optional
 
-from .scheduler_interface import IScheduler
-
-if TYPE_CHECKING:
-    from ..services.device_service import DeviceRegistry
-    from ..services.sensor_service import SensorRegistry
-    from ..services.actuator_service import ActuatorRegistry
-    from ..services.environmental_service import EnvironmentalService
+from ..schedulers.base_scheduler import BaseScheduler
+from ..schedulers.interval_scheduler import IntervalScheduler
+from ..schedulers.time_based_scheduler import TimeBasedScheduler
 
 
 class SchedulerFactory:
-    """Factory for creating scheduler instances."""
+    """Factory class for creating schedulers."""
 
-    def __init__(
-        self,
-        device_registry: "DeviceRegistry",
-        sensor_registry: "SensorRegistry",
-        actuator_registry: "ActuatorRegistry",
-        env_service: "EnvironmentalService",
+    @staticmethod
+    def create_scheduler(
+        config: Dict[str, Any],
+        device_registry=None,
         logger=None
-    ):
+    ) -> BaseScheduler:
         """
-        Initialize scheduler factory.
+        Create a scheduler instance from configuration.
 
         Args:
-            device_registry: Device registry instance
-            sensor_registry: Sensor registry instance
-            actuator_registry: Actuator registry instance
-            env_service: Environmental service instance
-            logger: Optional logger instance
-        """
-        self.device_registry = device_registry
-        self.sensor_registry = sensor_registry
-        self.actuator_registry = actuator_registry
-        self.env_service = env_service
-        self.logger = logger
-
-    def create(self, config: Dict[str, Any]) -> IScheduler:
-        """
-        Create scheduler based on configuration.
-
-        Args:
-            config: Configuration dictionary (validated AppConfig)
+            config: Full application configuration dictionary
+            device_registry: DeviceRegistry instance
+            logger: Logger instance
 
         Returns:
-            Scheduler instance implementing IScheduler
-
-        Raises:
-            ValueError: If configuration is invalid or scheduler cannot be created
+            An instance of a BaseScheduler subclass
         """
         schedule_config = config.get("schedule", {})
         schedule_type = schedule_config.get("type", "interval")
-        growing_system = config.get("growing_system", {}).get("type", "flood_drain")
+        growing_system = config.get("growing_system", {})
+        primary_device_id = growing_system.get("primary_device_id")
 
-        # Select scheduler based on growing system and schedule type
-        if growing_system == "nft":
-            return self._create_nft_scheduler(config, schedule_config)
-        elif growing_system == "flood_drain":
-            if schedule_type == "interval":
-                return self._create_interval_scheduler(config, schedule_config)
-            elif schedule_type == "time_based":
-                adaptation_config = schedule_config.get("adaptation", {}) or {}
-                if adaptation_config.get("enabled", False) and adaptation_config.get("adaptive", {}).get("enabled", False):
-                    return self._create_adaptive_scheduler(config, schedule_config, adaptation_config)
-                else:
-                    return self._create_time_based_scheduler(config, schedule_config)
-            else:
-                raise ValueError(f"Unknown schedule type: {schedule_type}")
+        if not primary_device_id:
+            raise ValueError("primary_device_id must be specified in growing_system config")
+
+        if schedule_type == "interval":
+            return SchedulerFactory._create_interval_scheduler(
+                schedule_config, primary_device_id, device_registry, logger
+            )
+        elif schedule_type == "time_based":
+            return SchedulerFactory._create_time_based_scheduler(
+                schedule_config, primary_device_id, device_registry, logger
+            )
         else:
-            raise ValueError(f"Unknown growing system: {growing_system}")
+            raise ValueError(f"Unknown schedule type: {schedule_type}")
 
-    def _create_interval_scheduler(self, config: Dict[str, Any], schedule_config: Dict[str, Any]) -> IScheduler:
-        """Create interval-based scheduler."""
-        from ..schedulers.interval_scheduler import IntervalScheduler
-
-        growing_system = config.get("growing_system", {})
-        device_id = growing_system.get("primary_device_id")
-
-        if not device_id:
-            raise ValueError("primary_device_id is required in growing_system configuration")
-
-        # Get cycle config from schedule (interval type)
-        flood_duration = float(schedule_config.get("flood_duration_minutes", 15.0))
-        drain_duration = float(schedule_config.get("drain_duration_minutes", 30.0))
-        interval = float(schedule_config.get("interval_minutes", 120.0))
-        enabled = schedule_config.get("enabled", True)
-        active_hours = schedule_config.get("active_hours") or {}
-
+    def _create_interval_scheduler(
+        config: Dict[str, Any],
+        device_id: str,
+        device_registry=None,
+        logger=None
+    ) -> IntervalScheduler:
+        """Create an IntervalScheduler."""
         return IntervalScheduler(
-            device_registry=self.device_registry,
             device_id=device_id,
-            flood_duration_minutes=flood_duration,
-            drain_duration_minutes=drain_duration,
-            interval_minutes=interval,
-            schedule_enabled=enabled,
-            active_hours_start=active_hours.get("start"),
-            active_hours_end=active_hours.get("end"),
-            logger=self.logger
+            flood_duration_minutes=config.get("flood_duration_minutes", 15.0),
+            drain_duration_minutes=config.get("drain_duration_minutes", 30.0),
+            interval_minutes=config.get("interval_minutes", 120.0),
+            active_hours_start=config.get("active_hours_start"),
+            active_hours_end=config.get("active_hours_end"),
+            device_registry=device_registry,
+            logger=logger
         )
 
-    def _create_time_based_scheduler(self, config: Dict[str, Any], schedule_config: Dict[str, Any]) -> IScheduler:
-        """Create time-based scheduler."""
-        from ..schedulers.time_based_scheduler import TimeBasedScheduler
-
-        growing_system = config.get("growing_system", {})
-        device_id = growing_system.get("primary_device_id")
-
-        if not device_id:
-            raise ValueError("primary_device_id is required in growing_system configuration")
-
-        flood_duration = float(schedule_config.get("flood_duration_minutes", 2.0))
-        cycles = schedule_config.get("cycles", [])
-
-        if not cycles:
-            raise ValueError("cycles are required for time_based schedule")
-
+    @staticmethod
+    def _create_time_based_scheduler(
+        config: Dict[str, Any],
+        device_id: str,
+        device_registry=None,
+        logger=None
+    ) -> TimeBasedScheduler:
+        """Create a TimeBasedScheduler."""
         return TimeBasedScheduler(
-            device_registry=self.device_registry,
             device_id=device_id,
-            cycles=cycles,
-            flood_duration_minutes=flood_duration,
-            logger=self.logger
+            flood_duration_minutes=config.get("flood_duration_minutes", 15.0),
+            cycles=config.get("cycles", []),
+            device_registry=device_registry,
+            logger=logger
         )
-
-    def _create_adaptive_scheduler(self, config: Dict[str, Any], schedule_config: Dict[str, Any], adaptation_config: Dict[str, Any]) -> IScheduler:
-        """Create adaptive scheduler."""
-        from ..schedulers.adaptive_scheduler import AdaptiveScheduler
-
-        growing_system = config.get("growing_system", {})
-        device_id = growing_system.get("primary_device_id")
-
-        if not device_id:
-            raise ValueError("primary_device_id is required in growing_system configuration")
-
-        flood_duration = float(schedule_config.get("flood_duration_minutes", 2.0))
-
-        return AdaptiveScheduler(
-            device_registry=self.device_registry,
-            device_id=device_id,
-            flood_duration_minutes=flood_duration,
-            adaptation_config=adaptation_config,
-            env_service=self.env_service,
-            logger=self.logger
-        )
-
-    def _create_nft_scheduler(self, config: Dict[str, Any], schedule_config: Dict[str, Any]) -> IScheduler:
-        """Create NFT scheduler."""
-        from ..schedulers.nft_scheduler import NFTScheduler
-
-        growing_system = config.get("growing_system", {})
-        device_id = growing_system.get("primary_device_id")
-
-        if not device_id:
-            raise ValueError("primary_device_id is required in growing_system configuration")
-
-        flow_schedule = growing_system.get("config", {})
-
-        return NFTScheduler(
-            device_registry=self.device_registry,
-            device_id=device_id,
-            flow_schedule=flow_schedule,
-            logger=self.logger
-        )
-

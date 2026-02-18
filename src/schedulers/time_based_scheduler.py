@@ -465,6 +465,7 @@ class TimeBasedScheduler(BaseScheduler):
             "flood_duration_minutes": self.flood_duration_minutes,
             "total_cycles": len(self.cycles),
             "current_cycle_index": self.current_cycle_index,
+            "next_event": next_event.isoformat() if next_event else None,
             "next_event_time": next_event.isoformat() if next_event else None,
             "cycles": [
                 {

@@ -2,10 +2,10 @@
 
 import threading
 import time
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta, timezone
 from typing import Optional, Dict, Any
 
-from ..core.scheduler_interface import IScheduler
+from .base_scheduler import BaseScheduler
 from ..services.device_service import DeviceRegistry, IDeviceService
 
 
@@ -16,7 +16,7 @@ STATE_DRAIN = "drain"
 STATE_WAITING = "waiting"
 
 
-class IntervalScheduler(IScheduler):
+class IntervalScheduler(BaseScheduler):
     """Scheduler for managing flood and drain cycles with fixed intervals."""
 
     def __init__(
@@ -56,6 +56,7 @@ class IntervalScheduler(IScheduler):
         self.logger = logger
 
         self.state = STATE_IDLE
+        self.next_cycle_time: Optional[str] = None  # UTC ISO 8601 timestamp of next flood cycle
         self.running = False
         self.shutdown_requested = False
         self.thread: Optional[threading.Thread] = None
@@ -147,7 +148,7 @@ class IntervalScheduler(IScheduler):
                 time.sleep(1)
         else:
             if self.logger:
-                self.logger.error("Failed to turn device off for drain phase")
+                self.logger.error("[SAFETY_OFF_FAILURE] Critical fail to turn off pump during drain phase!")
 
         with self.lock:
             self.state = STATE_WAITING
@@ -188,12 +189,15 @@ class IntervalScheduler(IScheduler):
             if self.shutdown_requested:
                 break
 
-            # Wait for next cycle interval
+            # Wait for next cycle interval — record next cycle time and use dynamic interval
+            next_start = datetime.now(timezone.utc) + timedelta(minutes=self.interval_minutes)
+            with self.lock:
+                self.next_cycle_time = next_start.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
             if self.logger:
                 self.logger.info(f"Waiting {self.interval_minutes} minutes until next cycle")
-            interval_seconds = self.interval_minutes * 60
+
             start_time = time.time()
-            while time.time() - start_time < interval_seconds and not self.shutdown_requested:
+            while (time.time() - start_time) < (self.interval_minutes * 60) and not self.shutdown_requested:
                 time.sleep(1)
 
         if self.logger:
@@ -234,7 +238,9 @@ class IntervalScheduler(IScheduler):
         if device and device.is_connected():
             if self.logger:
                 self.logger.info("Ensuring device is turned off before shutdown")
-            device.ensure_off()
+            if not device.ensure_off():
+                if self.logger:
+                    self.logger.error("[SAFETY_OFF_FAILURE] Critical fail to ensure pump is off during shutdown!")
             device.close()
 
         # Wait for thread to finish
@@ -249,6 +255,7 @@ class IntervalScheduler(IScheduler):
 
         with self.lock:
             self.state = STATE_IDLE
+            self.next_cycle_time = None
 
     def get_state(self) -> str:
         """
@@ -264,6 +271,23 @@ class IntervalScheduler(IScheduler):
         """Check if scheduler is running."""
         return self.running
 
+    def update_interval_minutes(self, interval_minutes: float) -> None:
+        """
+        Update interval while scheduler is running. Recalculates next_cycle_time
+        if in the wait phase.
+
+        Args:
+            interval_minutes: New interval between cycles in minutes
+        """
+        if interval_minutes <= 0:
+            return
+        with self.lock:
+            self.interval_minutes = interval_minutes
+            # Recalculate next cycle time if we have one (i.e. we're in wait phase)
+            if self.next_cycle_time:
+                next_start = datetime.now(timezone.utc) + timedelta(minutes=interval_minutes)
+                self.next_cycle_time = next_start.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
     def get_next_event_time(self) -> Optional[datetime]:
         """
         Get the next scheduled event time.
@@ -273,14 +297,14 @@ class IntervalScheduler(IScheduler):
         Returns:
             Datetime of next event, or None if scheduler not running
         """
-        if not self.running:
+        if not self.running or not self.next_cycle_time:
             return None
-
-        # For interval scheduler, next event is after current interval
-        # This is a simplified calculation - actual next time depends on current state
-        # For now, return None as it's complex to calculate accurately
-        # TODO: Implement proper next event calculation based on current state
-        return None
+        try:
+            return datetime.fromisoformat(
+                self.next_cycle_time.replace("Z", "+00:00")
+            )
+        except (ValueError, TypeError):
+            return None
 
     def get_status(self) -> Dict[str, Any]:
         """
@@ -306,6 +330,6 @@ class IntervalScheduler(IScheduler):
             "schedule_enabled": self.schedule_enabled,
             "active_hours_start": self.active_hours_start.strftime("%H:%M") if self.active_hours_start else None,
             "active_hours_end": self.active_hours_end.strftime("%H:%M") if self.active_hours_end else None,
-            "next_event_time": self.get_next_event_time().isoformat() if self.get_next_event_time() else None
+            "next_event": self.next_cycle_time,
         }
 

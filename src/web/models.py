@@ -9,10 +9,12 @@ class StatusResponse(BaseModel):
     controller_running: bool
     scheduler_running: bool
     scheduler_state: str
+    scheduler_mode: Optional[str]  # "adaptive" or "scheduled"
     device_connected: bool
     device_state: Optional[bool]  # True = ON, False = OFF, None = unknown
     device_ip: Optional[str]
-    next_event_time: Optional[str]
+    next_event: Optional[str]  # ISO 8601 UTC timestamp of next scheduled flood cycle, or null
+    next_event_time: Optional[str]  # Deprecated: use next_event
     time_until_next_cycle: Optional[str]  # Human-readable format like "2h 15m" or "45m 30s"
     current_time_period: Optional[str]  # "morning", "day", "evening", or "night"
 

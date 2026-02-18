@@ -29,6 +29,13 @@ class HydroController:
         self.web_api = None
         self.shutdown_requested = False
 
+    @property
+    def next_cycle_time(self) -> Optional[str]:
+        """Next scheduled flood cycle start time (UTC ISO 8601) or None if stopped."""
+        if self.scheduler and hasattr(self.scheduler, "next_cycle_time"):
+            return self.scheduler.next_cycle_time
+        return None
+
     def setup(self) -> bool:
         """
         Setup the controller, services and components.
