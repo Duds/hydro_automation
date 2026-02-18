@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hydroponic Control System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e27;font-family:'JetBrains Mono','Courier New',monospace;color:#e0e0e0;overflow:hidden}
+:root{--cyan:#00d9ff;--magenta:#ff006e;--lime:#00ff88;--bg:#0a0e27;--bg2:#0f1535;--bg3:#141a3a;--text:#e0e0e0}
+@keyframes pulse-cyan{0%,100%{box-shadow:0 0 6px var(--cyan),0 0 12px var(--cyan)}50%{box-shadow:0 0 14px var(--cyan),0 0 28px var(--cyan),0 0 40px var(--cyan)}}
+@keyframes pulse-magenta{0%,100%{box-shadow:0 0 6px var(--magenta),0 0 12px var(--magenta)}50%{box-shadow:0 0 14px var(--magenta),0 0 28px var(--magenta),0 0 40px var(--magenta)}}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.3}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes slide-in-bottom{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes toast-in{from{transform:translateY(-40px) rotate(-2deg);opacity:0}to{transform:translateY(0) rotate(0deg);opacity:1}}
+@keyframes toast-out{to{transform:translateY(-40px);opacity:0}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes flash-white{0%{box-shadow:0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 40px rgba(255,255,255,0.8)}100%{box-shadow:0 0 0 rgba(255,255,255,0)}}
+@keyframes stagger-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes entry-highlight{0%{background:rgba(0,217,255,0.2)}100%{background:transparent}}
+@keyframes red-pulse{0%,100%{box-shadow:0 0 6px red}50%{box-shadow:0 0 20px red,0 0 40px rgba(255,0,0,0.6)}}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:#0a0e27}
+::-webkit-scrollbar-thumb{background:var(--cyan)}
+::-webkit-scrollbar-thumb:hover{background:var(--magenta)}
+.neon-cyan{border:1px solid var(--cyan);box-shadow:0 0 6px var(--cyan),inset 0 0 6px rgba(0,217,255,0.05)}
+.neon-magenta{border:1px solid var(--magenta);box-shadow:0 0 6px var(--magenta),inset 0 0 6px rgba(255,0,110,0.05)}
+.neon-lime{border:1px solid var(--lime);box-shadow:0 0 6px var(--lime),inset 0 0 6px rgba(0,255,136,0.05)}
+.panel-running{animation:pulse-cyan 1.5s ease-in-out infinite}
+.device-on{animation:pulse-magenta 2s ease-in-out infinite}
+.btn{font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;border:1px solid;background:transparent;padding:10px 18px;transition:all .15s cubic-bezier(.34,1.56,.64,1);display:flex;align-items:center;gap:8px;position:relative;overflow:hidden}
+.btn:hover{filter:brightness(1.3)}
+.btn:active{transform:scale(.95) translateY(2px)}
+.btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.btn-cyan{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.btn-cyan:hover{box-shadow:0 0 16px var(--cyan),0 0 30px rgba(0,217,255,.4)}
+.btn-magenta{color:var(--magenta);border-color:var(--magenta);box-shadow:0 0 8px var(--magenta)}
+.btn-magenta:hover{box-shadow:0 0 16px var(--magenta),0 0 30px rgba(255,0,110,.4)}
+.btn-lime{color:var(--lime);border-color:var(--lime);box-shadow:0 0 8px var(--lime)}
+.btn-lime:hover{box-shadow:0 0 16px var(--lime),0 0 30px rgba(0,255,136,.4)}
+.spinner{animation:spin 1.5s linear infinite;display:inline-block}
+.log-entry{animation:slide-in-bottom .3s ease,entry-highlight .4s ease}
+.log-entry:hover{background:rgba(0,217,255,0.05)!important}
+.skeleton{background:var(--bg3);position:relative;overflow:hidden;border-radius:2px}
+.skeleton::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(0,217,255,.1),transparent);animation:shimmer 1.5s infinite}
+.section-header{font-size:10px;letter-spacing:.3em;color:var(--cyan);text-shadow:0 0 8px var(--cyan);border-bottom:1px solid var(--cyan);padding-bottom:6px;margin-bottom:14px;box-shadow:0 1px 0 rgba(0,217,255,.2)}
+.app-content{min-height:0;overflow:hidden}
+.log-panel-outer{min-height:0;overflow:hidden;height:100%}
+.log-panel-inner{min-height:0;overflow-y:auto;overflow-x:hidden}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function() {
+  var useState = React.useState, useEffect = React.useEffect, useRef = React.useRef, useCallback = React.useCallback, createElement = React.createElement;
+  var API = "http://localhost:8000/api";
+
+  function callApi(path, method) {
+    method = method || "GET";
+    var opts = { method: method, headers: { "Content-Type": "application/json" } };
+    return fetch(API + path, opts).then(function(r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function fmt2(n) { return String(n).padStart(2, "0"); }
+  function fmtCountdown(sec) {
+    if (sec == null || sec < 0) return "--:--:--";
+    return fmt2(Math.floor(sec/3600)) + ":" + fmt2(Math.floor((sec%3600)/60)) + ":" + fmt2(sec%60);
+  }
+  function logColor(line) {
+    if (/ERROR|error/i.test(line)) return "#ff4444";
+    if (/FLOOD|flood/i.test(line)) return "#00ff88";
+    if (/DRAIN|drain/i.test(line)) return "#ff006e";
+    return "#00d9ff";
+  }
+  function logPrefix(line) {
+    var now = new Date();
+    return "[" + fmt2(now.getHours()) + ":" + fmt2(now.getMinutes()) + ":" + fmt2(now.getSeconds()) + "] " + line;
+  }
+  function nextCycleSeconds(apiStatus) {
+    if (!apiStatus || !apiStatus.next_event) return null;
+    var sec = Math.floor((new Date(apiStatus.next_event).getTime() - Date.now()) / 1000);
+    return sec < 0 ? 0 : sec;
+  }
+
+  function Toast(props) {
+    var msg = props.msg, type = props.type, onDone = props.onDone;
+    var color = type === "success" ? "#00ff88" : "#ff4444";
+    var _s = useState(false), leaving = _s[0], setLeaving = _s[1];
+    useEffect(function() {
+      var t1 = setTimeout(function() { setLeaving(true); }, 3000);
+      var t2 = setTimeout(onDone, 3400);
+      return function() { clearTimeout(t1); clearTimeout(t2); };
+    }, []);
+    var anim = leaving ? "toast-out .3s ease forwards" : (type === "error" ? "red-pulse .6s ease 3,toast-in .3s ease" : "toast-in .3s ease");
+    return createElement("div", {
+      style: { position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#0f1535", border: "1px solid " + color, boxShadow: "0 0 16px " + color, padding: "10px 20px", fontSize: 12, color: color, letterSpacing: ".1em", animation: anim, zIndex: 9999, whiteSpace: "nowrap" }
+    }, type === "success" ? "\u2713" : "\u2717", " ", msg);
+  }
+
+  function Badge(props) {
+    return createElement("span", { style: { fontSize: 9, padding: "3px 7px", border: "1px solid " + props.color, color: props.color, boxShadow: "0 0 6px " + props.color, letterSpacing: ".15em" } }, props.label);
+  }
+
+  function StatusPanel(props) {
+    var status = props.status, device = props.device, loading = props.loading;
+    var running = status && status.scheduler_running;
+    var deviceOn = status && status.device_state === true;
+    var initialSec = status ? nextCycleSeconds(status) : null;
+    var _count = useState(initialSec), countdown = _count[0], setCountdown = _count[1];
+    var _blink = useState(false), blink = _blink[0], setBlink = _blink[1];
+    useEffect(function() {
+      if (status && status.next_event) setCountdown(nextCycleSeconds(status));
+    }, [status && status.next_event]);
+    useEffect(function() {
+      var id = setInterval(function() {
+        setCountdown(function(c) {
+          if (c == null) return null;
+          if (c <= 5) setBlink(true); else setBlink(false);
+          return c <= 0 ? 0 : c - 1;
+        });
+      }, 1000);
+      return function() { clearInterval(id); };
+    }, []);
+    var cn = "neon-cyan" + (running ? " panel-running" : "");
+    if (loading) {
+      var skeletons = [70, 50, 60].map(function(w, i) {
+        return createElement("div", { key: i, className: "skeleton", style: { height: 14, width: w + "%", marginBottom: 6 } }, "\u00A0");
+      });
+      return createElement("div", { style: { background: "#0f1535", padding: 20, display: "flex", flexDirection: "column", gap: 16, animation: "stagger-in .2s ease both" }, className: cn },
+        createElement("div", { className: "section-header" }, "\u25C8 STATUS"),
+        skeletons
+      );
+    }
+    var countdownStyle = {
+      fontSize: 22, fontWeight: 700, letterSpacing: ".15em",
+      color: countdown <= 10 ? "#ff006e" : "#00d9ff",
+      textShadow: countdown <= 10 ? "0 0 12px #ff006e" : "0 0 12px #00d9ff",
+      animation: blink ? "blink .2s ease 5" : (countdown === 0 ? "flash-white .1s ease" : "none")
+    };
+    return createElement("div", { style: { background: "#0f1535", padding: 20, display: "flex", flexDirection: "column", gap: 16, animation: "stagger-in .2s ease both" }, className: cn },
+      createElement("div", { className: "section-header" }, "\u25C8 STATUS"),
+      createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 } },
+        createElement("span", { style: { color: "#00ff88", animation: "pulse-dot 1.2s ease-in-out infinite", fontSize: 10 } }, "\u25C6"),
+        createElement("span", { style: { color: "#00ff88", textShadow: "0 0 6px #00ff88" } }, "CONNECTED"),
+        device && createElement("span", { style: { color: "#555", marginLeft: "auto", fontSize: 10 } }, device.ip_address)
+      ),
+      createElement("div", { style: { fontSize: 12 } },
+        createElement("span", { style: { color: "#555" } }, "SCHEDULER "),
+        createElement("span", { style: { color: running ? "#00d9ff" : "#555", textShadow: running ? "0 0 8px #00d9ff" : "none", fontWeight: 700 } }, "[" + (running ? "RUNNING" : "STOPPED") + "]")
+      ),
+      createElement("div", { style: { fontSize: 12 }, className: deviceOn ? "device-on" : "" },
+        createElement("span", { style: { color: "#555" } }, "DEVICE   "),
+        createElement("span", { style: { color: deviceOn ? "#ff006e" : "#555", textShadow: deviceOn ? "0 0 8px #ff006e" : "none", fontWeight: 700 } }, "[" + (deviceOn ? "ON" : "OFF") + "]")
+      ),
+      device && createElement("div", { style: { fontSize: 10, color: "#555" } }, "DEV ", createElement("span", { style: { color: "#00d9ff" } }, device.name)),
+      createElement("div", { style: { marginTop: 8, padding: 12, background: "#0a0e27", borderTop: "1px solid rgba(0,217,255,.2)" } },
+        createElement("div", { style: { fontSize: 9, color: "#555", letterSpacing: ".2em", marginBottom: 6 } }, "NEXT CYCLE IN"),
+        createElement("div", { style: countdownStyle }, fmtCountdown(countdown))
+      ),
+      createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+        createElement(Badge, { color: "#00d9ff", label: "SYS OK" }),
+        running && createElement(Badge, { color: "#00ff88", label: "SCHED" }),
+        deviceOn && createElement(Badge, { color: "#ff006e", label: "PUMP" })
+      )
+    );
+  }
+
+  function ControlPanel(props) {
+    var onAction = props.onAction, schedule = props.schedule, loadingSched = props.loadingSched;
+    var _p = useState(null), pending = _p[0], setPending = _p[1];
+    var _c = useState(null), confirm = _c[0], setConfirm = _c[1];
+    function act(label, path, method) {
+      method = method || "POST";
+      if (confirm !== label) { setConfirm(label); return; }
+      setConfirm(null); setPending(label);
+      onAction(path, method).then(function() { setPending(null); });
+    }
+    var buttons = [
+      { label: "START PUMP", sym: "\u25B6", path: "/device/on", cls: "btn-lime" },
+      { label: "STOP PUMP", sym: "\u25A0", path: "/device/off", cls: "btn-magenta" },
+      { label: "START SCHEDULER", sym: "\u25C8", path: "/control/start", cls: "btn-cyan" },
+      { label: "STOP SCHEDULER", sym: "\u25C9", path: "/control/stop", cls: "btn-magenta" }
+    ];
+    var btns = buttons.map(function(b) {
+      return createElement("button", {
+        key: b.label,
+        className: "btn " + b.cls,
+        disabled: pending != null,
+        onClick: function() { act(b.label, b.path); },
+        style: { justifyContent: "flex-start" }
+      }, pending === b.label ? createElement("span", { className: "spinner" }, "\u21BB") : createElement("span", null, b.sym), confirm === b.label ? "CONFIRM " + b.label + "?" : b.label);
+    });
+    var schedHeaderStyle = { color: "#00ff88", borderColor: "#00ff88", boxShadow: "0 1px 0 rgba(0,255,136,.2)" };
+    var schedContent;
+    if (loadingSched) {
+      schedContent = createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, [80, 60, 70, 55].map(function(w, i) {
+        return createElement("div", { key: i, className: "skeleton", style: { height: 12, width: w + "%" } }, "\u00A0");
+      }));
+    } else if (schedule) {
+      var typeStr = (schedule.type || "\u2014").toUpperCase();
+      var preText = "TYPE    : " + typeStr + "\nFLOOD   : " + (schedule.flood_duration_minutes != null ? schedule.flood_duration_minutes : "-") + " min\nDRAIN   : " + (schedule.drain_duration_minutes != null ? schedule.drain_duration_minutes : "-") + " min\nINTERVAL: " + (schedule.interval_minutes != null ? schedule.interval_minutes : "-") + " min\nACTIVE  : " + (schedule.active_hours_start != null ? schedule.active_hours_start : "-") + " \u2192 " + (schedule.active_hours_end != null ? schedule.active_hours_end : "-");
+      schedContent = createElement("pre", { style: { fontSize: 11, lineHeight: 1.7, color: "#00ff88", textShadow: "0 0 4px rgba(0,255,136,.4)", background: "#0a0e27", padding: 12, border: "1px solid rgba(0,255,136,.2)" } }, preText);
+    } else {
+      schedContent = createElement("span", { style: { color: "#555", fontSize: 11 } }, "NO DATA");
+    }
+    return createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16, animation: "stagger-in .3s ease both" } },
+      createElement("div", { style: { background: "#0f1535", padding: 20 }, className: "neon-cyan" },
+        createElement("div", { className: "section-header" }, "\u25C8 CONTROLS"),
+        createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } }, btns)
+      ),
+      createElement("div", { style: { background: "#0f1535", padding: 20 }, className: "neon-lime" },
+        createElement("div", { className: "section-header", style: schedHeaderStyle }, "\u25C8 SCHEDULE"),
+        schedContent
+      )
+    );
+  }
+
+  function LogPanel(props) {
+    var logs = props.logs;
+    var bottomRef = useRef(null);
+    useEffect(function() { if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" }); }, [logs]);
+    var entries = logs.map(function(line, i) {
+      var c = logColor(line);
+      return createElement("div", { key: i, className: "log-entry", style: { color: c, padding: "2px 6px", borderLeft: "2px solid " + c, paddingLeft: 8 } }, logPrefix(line));
+    });
+    return createElement("div", { style: { background: "#0f1535", padding: 20, display: "flex", flexDirection: "column", height: "100%", minHeight: 0, animation: "stagger-in .4s ease both" }, className: "neon-cyan log-panel-outer" },
+      createElement("div", { className: "section-header" }, "\u25C8 ACTIVITY LOG"),
+      createElement("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 2, fontSize: 10, lineHeight: 1.6 }, className: "log-panel-inner" },
+        logs.length === 0 && createElement("div", { style: { color: "#555", fontSize: 11 } }, "// waiting for log data\u2026"),
+        entries,
+        createElement("div", { ref: bottomRef })
+      )
+    );
+  }
+
+  function App() {
+    var _st = useState(null), status = _st[0], setStatus = _st[1];
+    var _dv = useState(null), device = _dv[0], setDevice = _dv[1];
+    var _sc = useState(null), schedule = _sc[0], setSchedule = _sc[1];
+    var _lg = useState([]), logs = _lg[0], setLogs = _lg[1];
+    var _to = useState([]), toasts = _to[0], setToasts = _to[1];
+    var _ls = useState(true), loadingStatus = _ls[0], setLS = _ls[1];
+    var _lsc = useState(true), loadingSched = _lsc[0], setLSched = _lsc[1];
+    var _er = useState(null), error = _er[0], setError = _er[1];
+
+    function addToast(msg, type) { setToasts(function(t) { return t.concat([{ id: Date.now(), msg: msg, type: type }]); }); }
+
+    var fetchAll = useCallback(function() {
+      return Promise.all([
+        callApi("/status"),
+        callApi("/device/info"),
+        callApi("/logs?lines=50"),
+        callApi("/config/schedule")
+      ]).then(function(arr) {
+        var s = arr[0], d = arr[1], l = arr[2], sc = arr[3];
+        setStatus(s);
+        setDevice(d);
+        setSchedule(sc);
+        setError(null);
+        if (l && l.logs) setLogs(function(prev) { return prev.concat(l.logs.filter(function(x) { return prev.indexOf(x) === -1; })).slice(-100); });
+        setLS(false);
+        setLSched(false);
+      }).catch(function(e) {
+        setError(e.message);
+        setLS(false);
+        setLSched(false);
+      });
+    }, []);
+
+    useEffect(function() {
+      fetchAll();
+      var id = setInterval(fetchAll, 10000);
+      return function() { clearInterval(id); };
+    }, [fetchAll]);
+
+    function onAction(path, method) {
+      method = method || "POST";
+      return callApi(path, method).then(function() {
+        addToast(path.split("/").pop().toUpperCase() + " OK", "success");
+        return fetchAll();
+      }).catch(function(e) { addToast("FAILED: " + e.message, "error"); });
+    }
+
+    var toastEls = toasts.map(function(t) {
+      return createElement(Toast, { key: t.id, msg: t.msg, type: t.type, onDone: function() { setToasts(function(p) { return p.filter(function(x) { return x.id !== t.id; }); }); } });
+    });
+    var iso = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    return createElement("div", { style: { width: "100vw", height: "100vh", display: "grid", gridTemplateRows: "auto 1fr", background: "#0a0e27", overflow: "hidden" } },
+      toastEls,
+      createElement("div", { style: { padding: "12px 24px", borderBottom: "1px solid rgba(0,217,255,.3)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0a0e27" } },
+        createElement("div", { style: { fontSize: 14, fontWeight: 700, letterSpacing: ".4em", color: "#00d9ff", textShadow: "0 0 12px #00d9ff" } }, "\u25C8 HYDROPONIC CONTROL SYSTEM"),
+        createElement("div", { style: { display: "flex", gap: 16, alignItems: "center" } },
+          error && createElement("span", { style: { fontSize: 10, color: "#ff4444", animation: "shake .3s ease" } }, "\u26A0 " + error),
+          createElement("span", { style: { fontSize: 9, color: "#555", letterSpacing: ".2em" } }, iso)
+        )
+      ),
+      createElement("div", { style: { display: "grid", gridTemplateColumns: "280px 1fr 300px", gap: 12, padding: 12, minHeight: 0, overflow: "hidden" }, className: "app-content" },
+        createElement(StatusPanel, { status: status, device: device, loading: loadingStatus }),
+        createElement(ControlPanel, { onAction: onAction, schedule: schedule, loadingSched: loadingSched }),
+        createElement(LogPanel, { logs: logs })
+      )
+    );
+  }
+
+  var root = ReactDOM.createRoot(document.getElementById("root"));
+  root.render(createElement(App, null));
+})();
+</script>
+</body>
+</html>

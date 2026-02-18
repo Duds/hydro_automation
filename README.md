@@ -62,6 +62,22 @@ Enable the web interface in `config/config.json`:
 ```
 Access at `http://localhost:8000`.
 
+### Standalone HTML UI
+
+A single-file React UI is included for monitoring and control without running a local server. It talks to the daemon API over CORS.
+
+1. **Ensure the daemon is running** (e.g. `python -m src.main` or the LaunchAgent). The API must have CORS enabled (it does by default, including `file://` origin).
+
+2. **Open the file in a browser**:
+   ```bash
+   open hydro-standalone.html
+   ```
+   Or double-click `hydro-standalone.html` in Finder. The page loads React from a CDN and uses `http://localhost:8000/api` for all requests.
+
+3. **If you see connection errors**, confirm the daemon is listening on port 8000 and that you are opening the HTML from the project directory (or that your browser allows the request from your open location).
+
+No build step is required; the script is plain JavaScript (no in-browser Babel).
+
 ### MCP Server (AI Integration) — Recommended
 
 The MCP server lets you **monitor and control your hydroponic system from Cursor, Claude Desktop, or any MCP-compatible AI client**. Ask your AI assistant to check status, turn the pump on or off, start/stop the scheduler, adjust schedules, or pull logs — all without opening the web UI.
