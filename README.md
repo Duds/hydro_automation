@@ -5,9 +5,10 @@ A robust Python application to control a TP-Link Tapo P100 smart plug for automa
 ## Features
 
 - **Unlimited Cycles**: No restriction on the number of flood/drain cycles.
-- **Flexible Scheduling**: 
+- **Flexible Scheduling**:
   - **Interval-Based**: Simple flood/drain/wait cycles.
   - **Time-Based**: Specific ON times throughout the day with configurable OFF durations.
+- **MCP (Model Context Protocol)**: Control your hydroponic system from AI assistants — **Cursor**, **Claude Desktop**, or any MCP client. Check status, turn the pump on/off, start or stop the scheduler, update schedules, and view logs without leaving your AI workflow.
 - **Web UI**: Simple web interface for real-time monitoring and manual control.
 - **Error Recovery**: Automatic retry on connection failures with state verification.
 - **Graceful Shutdown**: Ensures the pump is off when the application stops.
@@ -61,37 +62,27 @@ Enable the web interface in `config/config.json`:
 ```
 Access at `http://localhost:8000`.
 
-### MCP Server (AI Integration)
+### MCP Server (AI Integration) — Recommended
 
-The MCP server lets you monitor and control the hydroponic system through Claude Desktop, Claude Code, or any MCP-compatible client.
+The MCP server lets you **monitor and control your hydroponic system from Cursor, Claude Desktop, or any MCP-compatible AI client**. Ask your AI assistant to check status, turn the pump on or off, start/stop the scheduler, adjust schedules, or pull logs — all without opening the web UI.
+
+**Quick setup**: Run `./setup_mcp.sh` to install dependencies and print the exact config for your installation.
 
 1. **Install MCP dependencies**:
    ```bash
    pip install -r requirements-mcp.txt
    ```
 
-2. **Run the MCP server directly** (for testing):
+2. **Configure your AI client**:
+   - **Cursor**: Settings → MCP → Add server. Use the config printed by `./setup_mcp.sh`.
+   - **Claude Desktop**: Add the config to `~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+   See `MCP_SETUP_INSTRUCTIONS.txt` for detailed setup and troubleshooting.
+
+3. **Test** (optional):
    ```bash
    python -m src.mcp_server
    ```
-
-3. **Configure Claude Desktop** — add to your `claude_desktop_config.json`:
-   ```json
-   {
-     "mcpServers": {
-       "hydro": {
-         "command": "/path/to/hydro_automation/venv/bin/python",
-         "args": ["-m", "src.mcp_server"],
-         "cwd": "/path/to/hydro_automation",
-         "env": {
-           "HYDRO_API_URL": "http://localhost:8000"
-         }
-       }
-     }
-   }
-   ```
-   Replace `/path/to/hydro_automation` with the actual project directory on your Mac.
-   Or run `./setup_mcp.sh` to print the exact config for your installation.
 
 **Available tools**: `hydro_get_status`, `hydro_get_device_info`, `hydro_get_logs`, `hydro_get_config`, `hydro_get_schedule`, `hydro_device_on`, `hydro_device_off`, `hydro_scheduler_start`, `hydro_scheduler_stop`, `hydro_update_schedule`.
 

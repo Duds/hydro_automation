@@ -116,6 +116,30 @@ class WebAPI:
                     except Exception:
                         pass
 
+                # Timed operation (pump on for N minutes then auto-off)
+                timed_off_at = None
+                time_until_timed_off = None
+                gate = getattr(self.controller, "timed_operation_gate", None)
+                if gate and gate.is_running():
+                    timed_off_at = gate.get_off_at()
+                    if timed_off_at:
+                        try:
+                            off_dt = datetime.fromisoformat(
+                                timed_off_at.replace("Z", "+00:00")
+                            )
+                            now = datetime.now(timezone.utc)
+                            if off_dt.tzinfo is None:
+                                off_dt = off_dt.replace(tzinfo=timezone.utc)
+                            delta = off_dt - now
+                            secs = int(max(0, delta.total_seconds()))
+                            mins, secs = divmod(secs, 60)
+                            if mins > 0:
+                                time_until_timed_off = f"{mins}m {secs}s"
+                            else:
+                                time_until_timed_off = f"{secs}s"
+                        except Exception:
+                            pass
+
                 return StatusResponse(
                     controller_running=not self.controller.shutdown_requested,
                     scheduler_running=scheduler_running,
@@ -127,6 +151,8 @@ class WebAPI:
                     next_event=next_event,
                     next_event_time=next_event,
                     time_until_next_cycle=time_until_next_cycle,
+                    timed_off_at=timed_off_at,
+                    time_until_timed_off=time_until_timed_off,
                     current_time_period=None
                 )
             except HTTPException:
@@ -259,6 +285,37 @@ class WebAPI:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error turning device on: {str(e)}")
+
+        @self.app.post("/api/device/on-timed", response_model=ControlResponse)
+        async def turn_device_on_timed(request: Request):
+            """Turn pump ON for a specified duration, then automatically turn OFF."""
+            try:
+                from ..core.timed_operation import TimedOperationBusyError
+
+                body = await request.json()
+                duration_minutes = float(body.get("duration_minutes", 0))
+
+                if duration_minutes <= 0 or duration_minutes > 60:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="duration_minutes must be > 0 and <= 60",
+                    )
+
+                off_at_iso = self.controller.device_on_timed(duration_minutes)
+                return ControlResponse(
+                    success=True,
+                    message=f"Pump turned ON for {duration_minutes} minutes. "
+                    f"Will turn OFF at {off_at_iso} UTC.",
+                    off_at_iso=off_at_iso,
+                )
+            except TimedOperationBusyError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+            except (ValueError, KeyError) as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500, detail=f"Error starting timed operation: {str(e)}"
+                )
 
         @self.app.post("/api/device/off", response_model=ControlResponse)
         async def turn_device_off():

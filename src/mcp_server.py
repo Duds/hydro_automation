@@ -53,11 +53,12 @@ async def _get(endpoint: str) -> Dict[str, Any]:
         return response.json()
 
 
-async def _post(endpoint: str) -> Dict[str, Any]:
+async def _post(endpoint: str, json: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Make a POST request to the daemon API."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{API_BASE_URL}{endpoint}",
+            json=json,
             timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
@@ -234,6 +235,13 @@ async def hydro_get_status() -> str:
     else:
         lines.append("- **Next flood**: none scheduled")
 
+    timed_off_iso = data.get("timed_off_at")
+    if timed_off_iso:
+        timed_off_local = _format_next_event_local(timed_off_iso)
+        time_until_timed = data.get("time_until_timed_off", "")
+        suffix = f" (in {time_until_timed})" if time_until_timed else ""
+        lines.append(f"- **Timed off at**: {timed_off_local}{suffix}")
+
     return "\n".join(lines)
 
 
@@ -360,6 +368,55 @@ async def hydro_device_on() -> str:
     try:
         data = await _post("/api/device/on")
         return data.get("message", "Done.")
+    except Exception as e:
+        return _daemon_error(e)
+
+
+class DeviceOnTimedInput(BaseModel):
+    """Input for turning pump ON for a specified duration."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    duration_minutes: float = Field(
+        gt=0,
+        le=60,
+        description="Duration to keep the pump ON in minutes (1–60)",
+    )
+
+
+@mcp.tool(
+    name="hydro_device_on_timed",
+    annotations={
+        "title": "Turn Pump ON (Timed)",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def hydro_device_on_timed(params: DeviceOnTimedInput) -> str:
+    """Turn the pump ON for a specified duration, then automatically turn it OFF.
+
+    Args:
+        params (DeviceOnTimedInput): duration_minutes (float, 1–60).
+
+    Returns:
+        str: Confirmation message including scheduled off time in Australia/Sydney.
+    """
+    try:
+        data = await _post(
+            "/api/device/on-timed",
+            json={"duration_minutes": params.duration_minutes},
+        )
+        msg = data.get("message", "Pump turned ON for specified duration.")
+        off_at_iso = data.get("off_at_iso")
+        if off_at_iso:
+            off_local = _format_next_event_local(off_at_iso)
+            return f"{msg} Scheduled off time: {off_local} (Australia/Sydney)."
+        return msg
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409:
+            return "Error: A timed operation is already running. Wait for it to complete."
+        return _daemon_error(e)
     except Exception as e:
         return _daemon_error(e)
 

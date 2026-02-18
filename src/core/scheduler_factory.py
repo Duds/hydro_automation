@@ -14,7 +14,8 @@ class SchedulerFactory:
     def create_scheduler(
         config: Dict[str, Any],
         device_registry=None,
-        logger=None
+        logger=None,
+        timed_operation_gate=None,
     ) -> BaseScheduler:
         """
         Create a scheduler instance from configuration.
@@ -23,6 +24,7 @@ class SchedulerFactory:
             config: Full application configuration dictionary
             device_registry: DeviceRegistry instance
             logger: Logger instance
+            timed_operation_gate: Optional gate for scheduler to wait before cycles
 
         Returns:
             An instance of a BaseScheduler subclass
@@ -37,11 +39,13 @@ class SchedulerFactory:
 
         if schedule_type == "interval":
             return SchedulerFactory._create_interval_scheduler(
-                schedule_config, primary_device_id, device_registry, logger
+                schedule_config, primary_device_id, device_registry, logger,
+                timed_operation_gate,
             )
         elif schedule_type == "time_based":
             return SchedulerFactory._create_time_based_scheduler(
-                schedule_config, primary_device_id, device_registry, logger
+                schedule_config, primary_device_id, device_registry, logger,
+                timed_operation_gate,
             )
         else:
             raise ValueError(f"Unknown schedule type: {schedule_type}")
@@ -50,7 +54,8 @@ class SchedulerFactory:
         config: Dict[str, Any],
         device_id: str,
         device_registry=None,
-        logger=None
+        logger=None,
+        timed_operation_gate=None,
     ) -> IntervalScheduler:
         """Create an IntervalScheduler."""
         return IntervalScheduler(
@@ -61,7 +66,8 @@ class SchedulerFactory:
             active_hours_start=config.get("active_hours_start"),
             active_hours_end=config.get("active_hours_end"),
             device_registry=device_registry,
-            logger=logger
+            logger=logger,
+            timed_operation_gate=timed_operation_gate,
         )
 
     @staticmethod
@@ -69,7 +75,8 @@ class SchedulerFactory:
         config: Dict[str, Any],
         device_id: str,
         device_registry=None,
-        logger=None
+        logger=None,
+        timed_operation_gate=None,
     ) -> TimeBasedScheduler:
         """Create a TimeBasedScheduler."""
         return TimeBasedScheduler(
@@ -77,5 +84,6 @@ class SchedulerFactory:
             flood_duration_minutes=config.get("flood_duration_minutes", 15.0),
             cycles=config.get("cycles", []),
             device_registry=device_registry,
-            logger=logger
+            logger=logger,
+            timed_operation_gate=timed_operation_gate,
         )

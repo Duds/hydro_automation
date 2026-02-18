@@ -16,6 +16,8 @@ class StatusResponse(BaseModel):
     next_event: Optional[str]  # ISO 8601 UTC timestamp of next scheduled flood cycle, or null
     next_event_time: Optional[str]  # Deprecated: use next_event
     time_until_next_cycle: Optional[str]  # Human-readable format like "2h 15m" or "45m 30s"
+    timed_off_at: Optional[str]  # ISO 8601 UTC timestamp when timed pump-on turns off, or null
+    time_until_timed_off: Optional[str]  # Human-readable e.g. "1m 45s" when timed op running
     current_time_period: Optional[str]  # "morning", "day", "evening", or "night"
 
 
@@ -66,4 +68,5 @@ class ControlResponse(BaseModel):
     """Control action response."""
     success: bool
     message: str
+    off_at_iso: Optional[str] = None  # For timed on: UTC ISO 8601 when pump turns off
 

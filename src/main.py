@@ -1,11 +1,14 @@
 import os
 import signal
 import sys
+import threading
 import time
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 from .core.config_validator import load_and_validate_config
+from .core.timed_operation import TimedOperationBusyError, TimedOperationGate
 from .services.service_factory import create_device_registry
 from .core.scheduler_factory import SchedulerFactory
 from .web.api import WebAPI
@@ -28,6 +31,7 @@ class HydroController:
         self.scheduler = None
         self.web_api = None
         self.shutdown_requested = False
+        self.timed_operation_gate = TimedOperationGate()
 
     @property
     def next_cycle_time(self) -> Optional[str]:
@@ -68,11 +72,12 @@ class HydroController:
                     self.logger.error(f"Primary device {primary_id} not found in registry")
                     return False
 
-            # 4. Initialize scheduler
+            # 4. Initialize scheduler (pass gate so scheduler waits for timed ops)
             self.scheduler = SchedulerFactory.create_scheduler(
                 self.config,
                 self.device_registry,
-                self.logger
+                self.logger,
+                self.timed_operation_gate,
             )
 
             # 5. Initialize web API (if enabled)
@@ -112,6 +117,62 @@ class HydroController:
             ]
         )
         self.logger = logging.getLogger("HydroController")
+
+    def device_on_timed(self, duration_minutes: float) -> str:
+        """
+        Turn the pump on for a specified duration, then turn it off automatically.
+        Runs in a background thread. Only one timed operation can run at a time.
+
+        Args:
+            duration_minutes: Duration in minutes (must be > 0)
+
+        Returns:
+            UTC ISO 8601 timestamp of when the pump will turn off.
+
+        Raises:
+            TimedOperationBusyError: If a timed operation is already running (from
+                src.core.timed_operation).
+        """
+        if self.timed_operation_gate.is_running():
+            raise TimedOperationBusyError(
+                "A timed operation is already running. Wait for it to complete."
+            )
+
+        primary_id = self.config.get("growing_system", {}).get("primary_device_id")
+        if not primary_id or not self.device_registry:
+            raise ValueError("Primary device not configured")
+
+        device = self.device_registry.get_device(primary_id)
+        if not device:
+            raise ValueError("Primary device not found in registry")
+
+        off_at = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+        off_at_iso = off_at.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+        self.timed_operation_gate.start(off_at_iso)
+
+        def run_timed():
+            try:
+                if self.logger:
+                    self.logger.info(
+                        f"Timed operation: turning pump ON for {duration_minutes} minutes "
+                        f"(off at {off_at_iso})"
+                    )
+                if device.turn_on(verify=True):
+                    duration_seconds = duration_minutes * 60
+                    start = time.time()
+                    while time.time() - start < duration_seconds and not self.shutdown_requested:
+                        time.sleep(1)
+                device.turn_off(verify=True)
+                if self.logger:
+                    self.logger.info("Timed operation: pump turned OFF")
+            finally:
+                self.timed_operation_gate.finish()
+
+        t = threading.Thread(target=run_timed, daemon=True)
+        t.start()
+
+        return off_at_iso
 
     def run(self):
         """Main execution loop."""

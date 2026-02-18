@@ -20,7 +20,8 @@ class TimeBasedScheduler(BaseScheduler):
         device_id: str,
         cycles: List[Dict[str, Any]],
         flood_duration_minutes: float = 2.0,
-        logger=None
+        logger=None,
+        timed_operation_gate=None,
     ):
         """
         Initialise the time-based scheduler.
@@ -36,6 +37,7 @@ class TimeBasedScheduler(BaseScheduler):
         self.device_id = device_id
         self.flood_duration_minutes = flood_duration_minutes
         self.logger = logger
+        self.timed_operation_gate = timed_operation_gate
 
         # Parse and validate cycles
         self.cycles = []
@@ -212,6 +214,15 @@ class TimeBasedScheduler(BaseScheduler):
 
             # Reset the flag after checking it
             self.just_completed_cycle = False
+
+            if self.shutdown_requested:
+                break
+
+            # Wait for any timed operation to complete before starting a cycle
+            if self.timed_operation_gate and self.timed_operation_gate.is_running():
+                if self.logger:
+                    self.logger.info("Waiting for timed operation to complete before cycle...")
+                self.timed_operation_gate.wait_until_done()
 
             if self.shutdown_requested:
                 break

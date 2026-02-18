@@ -2,6 +2,21 @@
 HYDROPONIC CONTROLLER - MCP SETUP INSTRUCTIONS
 ======================================================================
 
+Control your hydroponic flood & drain system from Cursor, Claude Desktop,
+or any MCP-compatible AI client. Ask your AI assistant to:
+  - Check status (scheduler state, pump, next flood time)
+  - Turn the pump on or off
+  - Start or stop the scheduler
+  - Update schedules (interval, flood/drain duration, active hours)
+  - View recent logs
+
+The daemon must be running (python -m src.main or LaunchAgent) for the
+MCP tools to work. The MCP server talks to the daemon over HTTP.
+
+----------------------------------------------------------------------
+QUICK SETUP
+----------------------------------------------------------------------
+
 Run these commands in your terminal:
 
 1. Navigate to the project (adjust path if you moved the project):
@@ -13,25 +28,28 @@ Run these commands in your terminal:
    This will install the MCP dependencies and show you the exact config
    with the correct paths for your installation.
 
-3. Copy the config shown by the script and add/update it in:
-   ~/Library/Application Support/Claude/claude_desktop_config.json
+3. Add the config to your AI client:
+   - CURSOR: Settings → MCP → Add server. Paste the config block.
+   - CLAUDE DESKTOP: Add to ~/Library/Application Support/Claude/
+     claude_desktop_config.json. Merge the "hydro" entry into
+     the existing "mcpServers" object if you have other servers.
 
-   Merge the "hydro" entry into the existing "mcpServers" object if you
-   have other MCP servers configured.
-
-4. Restart Claude Desktop
+4. Restart your AI client (Cursor or Claude Desktop).
 
 5. If hydro won't load, check the hydro-specific log at:
    ~/Library/Logs/Claude/mcp-server-hydro.log
    (Claude may open the Filesystem log by default — use the hydro log for debugging.)
 
-That's it! The MCP server will be available with tools like:
-- hydro_get_status
-- hydro_device_on / hydro_device_off
-- hydro_scheduler_start / hydro_scheduler_stop
-- hydro_get_logs
-- hydro_update_schedule
+That's it! You can now ask your AI assistant to control your hydroponic
+system using tools such as:
+  - hydro_get_status      (scheduler state, pump, next flood time)
+  - hydro_device_on / hydro_device_off
+  - hydro_scheduler_start / hydro_scheduler_stop
+  - hydro_get_logs
+  - hydro_update_schedule
 
+======================================================================
+MANUAL SETUP
 ======================================================================
 
 If you prefer to do it manually:
@@ -40,8 +58,9 @@ cd /path/to/hydro_automation
 source venv/bin/activate
 pip install "mcp[cli]>=1.0.0"
 
-Then add this to ~/Library/Application Support/Claude/claude_desktop_config.json
-(replace /path/to/hydro_automation with your actual project path):
+Then add this to your MCP client config (e.g. Cursor MCP settings, or
+~/Library/Application Support/Claude/claude_desktop_config.json for Claude).
+Replace /path/to/hydro_automation with your actual project path:
 
 {
   "mcpServers": {
@@ -49,10 +68,10 @@ Then add this to ~/Library/Application Support/Claude/claude_desktop_config.json
       "command": "/path/to/hydro_automation/venv/bin/python",
       "args": ["-m", "src.mcp_server"],
       "cwd": "/path/to/hydro_automation",
-"env": {
-    "HYDRO_API_URL": "http://localhost:8000",
-    "PYTHONPATH": "/path/to/hydro_automation"
-  }
+      "env": {
+        "HYDRO_API_URL": "http://localhost:8000",
+        "PYTHONPATH": "/path/to/hydro_automation"
+      }
     }
   }
 }

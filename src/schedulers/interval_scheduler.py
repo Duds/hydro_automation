@@ -29,7 +29,8 @@ class IntervalScheduler(BaseScheduler):
         schedule_enabled: bool = True,
         active_hours_start: Optional[str] = None,
         active_hours_end: Optional[str] = None,
-        logger=None
+        logger=None,
+        timed_operation_gate=None,
     ):
         """
         Initialise the interval scheduler.
@@ -57,6 +58,7 @@ class IntervalScheduler(BaseScheduler):
 
         self.state = STATE_IDLE
         self.next_cycle_time: Optional[str] = None  # UTC ISO 8601 timestamp of next flood cycle
+        self.timed_operation_gate = timed_operation_gate
         self.running = False
         self.shutdown_requested = False
         self.thread: Optional[threading.Thread] = None
@@ -178,6 +180,12 @@ class IntervalScheduler(BaseScheduler):
                     self.logger.debug("Outside active hours, waiting...")
                 time.sleep(60)  # Check every minute
                 continue
+
+            # Wait for any timed operation to complete before starting a cycle
+            if self.timed_operation_gate and self.timed_operation_gate.is_running():
+                if self.logger:
+                    self.logger.info("Waiting for timed operation to complete before cycle...")
+                self.timed_operation_gate.wait_until_done()
 
             # Execute cycle
             cycle_count += 1
